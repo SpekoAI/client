@@ -1,0 +1,55 @@
+{
+  "name": "@spekoai/client",
+  "version": "0.1.0",
+  "description": "Browser SDK for SpekoAI — real-time voice conversations over LiveKit",
+  "license": "MIT",
+  "author": "Speko",
+  "homepage": "https://github.com/SpekoAI/typescript-client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SpekoAI/typescript-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SpekoAI/typescript-client/issues"
+  },
+  "keywords": [
+    "speko",
+    "voice-ai",
+    "livekit",
+    "webrtc",
+    "browser",
+    "client"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@spekoai/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "dependencies": {
+    "@spekoai/core": "workspace:*",
+    "livekit-client": "^2.11.4",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  }
+}
