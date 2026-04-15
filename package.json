@@ -1,16 +1,16 @@
 {
   "name": "@spekoai/client",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Browser SDK for SpekoAI — real-time voice conversations over LiveKit",
   "license": "MIT",
   "author": "Speko",
-  "homepage": "https://github.com/SpekoAI/typescript-client#readme",
+  "homepage": "https://github.com/SpekoAI/client#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SpekoAI/typescript-client.git"
+    "url": "git+https://github.com/SpekoAI/client.git"
   },
   "bugs": {
-    "url": "https://github.com/SpekoAI/typescript-client/issues"
+    "url": "https://github.com/SpekoAI/client/issues"
   },
   "keywords": [
     "speko",
@@ -45,7 +45,6 @@
     "provenance": true
   },
   "dependencies": {
-    "@spekoai/core": "workspace:*",
     "livekit-client": "^2.11.4",
     "tslib": "^2.3.0"
   },
