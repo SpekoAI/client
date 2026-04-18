@@ -24,13 +24,71 @@ Requires a modern browser (WebRTC + `AudioContext`). Ships ESM.
 ## Two-step flow
 
 1. **Backend** mints a conversation token by calling
-   `POST /v1/sessions` on your Speko server (e.g. through `@spekoai/sdk`
-   or a direct REST call). Response: `{ conversationToken, livekitUrl }`.
+   `POST /v1/sessions` on the Speko API (direct REST call — `@spekoai/sdk`
+   does **not** expose a sessions helper today). Response includes
+   `conversationToken` + `livekitUrl`.
 2. **Browser** opens `VoiceConversation.create(...)` with those two values.
 
 Do not call `/v1/sessions` from the browser — that would leak your API
 key. Token issuance stays server-side; the browser receives a scoped,
 short-lived LiveKit token.
+
+### Backend: minting a conversation token
+
+Direct REST call — no SDK method exists for this yet.
+
+```
+POST https://api.speko.ai/v1/sessions
+Authorization: Bearer $SPEKO_API_KEY
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "intent": {
+    "language": "en-US",
+    "vertical": "general",
+    "optimizeFor": "balanced"
+  },
+  "constraints": { "allowedProviders": { "tts": ["cartesia"] } },
+  "systemPrompt": "You are a concise voice assistant.",
+  "voice": "sonic-english",
+  "llm":        { "temperature": 0.7, "maxTokens": 400 },
+  "ttsOptions": { "sampleRate": 24000, "speed": 1.0 },
+  "ttlSeconds": 900,
+  "identity":   "user_abc123",
+  "metadata":   { "userId": "abc123" }
+}
+```
+
+- `intent` is **required** and is a nested object. `language` is BCP-47.
+  Valid `vertical`: `general | healthcare | finance | legal`. Valid
+  `optimizeFor`: `balanced | accuracy | latency | cost`.
+- Everything else is optional. `ttlSeconds` defaults to 900 (max
+  86400). `identity` defaults to a random uuid; set it to a
+  stable-per-user value if you want LiveKit presence / analytics to
+  correlate sessions by end user.
+- There is **no `agent` / `agentId` field**. There is no
+  `SPEKO_AGENT_ID` env var. Agent behavior is configured via
+  `systemPrompt` + `voice` + `llm` at session-creation time.
+
+Response `201`:
+
+```json
+{
+  "sessionId": "uuid",
+  "conversationToken": "jwt-for-livekit",
+  "livekitUrl": "wss://...",
+  "roomName": "speko_<uuid>",
+  "identity": "user_abc123",
+  "expiresAt": "2026-04-18T19:00:00Z"
+}
+```
+
+Return `conversationToken` and `livekitUrl` to the browser — the
+browser does not need the other fields.
 
 ## Minimal snippet
 
