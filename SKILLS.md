@@ -49,7 +49,6 @@ Request body:
 {
   "intent": {
     "language": "en-US",
-    "vertical": "general",
     "optimizeFor": "balanced"
   },
   "constraints": { "allowedProviders": { "tts": ["cartesia"] } },
@@ -64,8 +63,7 @@ Request body:
 ```
 
 - `intent` is **required** and is a nested object. `language` is BCP-47.
-  Valid `vertical`: `general | healthcare | finance | legal`. Valid
-  `optimizeFor`: `balanced | accuracy | latency | cost`.
+  Valid `optimizeFor`: `balanced | accuracy | latency | cost`.
 - Everything else is optional. `ttlSeconds` defaults to 900 (max
   86400). `identity` defaults to a random uuid; set it to a
   stable-per-user value if you want LiveKit presence / analytics to
