@@ -14,7 +14,7 @@ jobs:
     # workflow (`mirror-client.yml`). Those commits always start with the
     # prefix below, carry the already-synced subtree, and dispatching on
     # them would burn a no-op sync-from-mirrors run round-trip.
-    if: "!startsWith(github.event.head_commit.message, 'sync: import packages/client from monorepo @')"
+    if: "!startsWith(github.event.head_commit.message, 'sync: mirror packages/client')"
     steps:
       - name: Trigger monorepo inbound sync
         env:
