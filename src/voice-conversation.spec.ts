@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const connectMock = vi.fn(async () => 'conv_xyz');
 const constructorSpy = vi.fn();
@@ -18,11 +18,6 @@ vi.mock('./webrtc-connection.js', () => {
   return { WebRTCConnection: MockWebRTCConnection };
 });
 
-const requestSessionMock = vi.fn();
-vi.mock('./start-session.js', () => ({
-  requestSession: requestSessionMock,
-}));
-
 // Import AFTER mocks register so the SUT picks up mocked modules.
 const { VoiceConversation } = await import('./voice-conversation.js');
 
@@ -37,11 +32,10 @@ function firstConstructorArg(): unknown {
   return call[0];
 }
 
-describe('VoiceConversation.create — token form (legacy)', () => {
+describe('VoiceConversation.create', () => {
   beforeEach(() => {
     connectMock.mockClear();
     constructorSpy.mockClear();
-    requestSessionMock.mockReset();
   });
 
   it('connects directly when given conversationToken + livekitUrl', async () => {
@@ -53,7 +47,6 @@ describe('VoiceConversation.create — token form (legacy)', () => {
     expect(conv.getId()).toBe('conv_xyz');
     expect(conv.isOpen()).toBe(true);
 
-    expect(requestSessionMock).not.toHaveBeenCalled();
     expect(connectMock).toHaveBeenCalledTimes(1);
     expect(constructorSpy).toHaveBeenCalledTimes(1);
 
@@ -93,105 +86,5 @@ describe('VoiceConversation.create — token form (legacy)', () => {
     expect(init.inputDeviceId).toBe('mic-1');
     expect(init.callbacks.onConnect).toBe(onConnect);
     expect(init.callbacks.onMessage).toBe(onMessage);
-  });
-});
-
-describe('VoiceConversation.create — agent form', () => {
-  beforeEach(() => {
-    connectMock.mockClear();
-    constructorSpy.mockClear();
-    requestSessionMock.mockReset();
-  });
-
-  afterEach(() => {
-    requestSessionMock.mockReset();
-  });
-
-  it('mints a session via requestSession then connects with the returned token', async () => {
-    requestSessionMock.mockResolvedValueOnce({
-      sessionId: 'sess_1',
-      conversationToken: 'tok_minted',
-      livekitUrl: 'wss://lk.minted',
-      expiresAt: '2026-01-01T00:00:00.000Z',
-    });
-
-    const conv = await VoiceConversation.create({
-      agentId: 'agent_a1b2c3',
-      apiKey: 'sk_live_test',
-    });
-
-    expect(conv.getId()).toBe('conv_xyz');
-    expect(requestSessionMock).toHaveBeenCalledTimes(1);
-    expect(requestSessionMock).toHaveBeenCalledWith({
-      agentId: 'agent_a1b2c3',
-      apiKey: 'sk_live_test',
-    });
-
-    const init = firstConstructorArg() as {
-      conversationToken: string;
-      livekitUrl: string;
-    };
-    expect(init.conversationToken).toBe('tok_minted');
-    expect(init.livekitUrl).toBe('wss://lk.minted');
-  });
-
-  it('passes apiBaseUrl through when provided', async () => {
-    requestSessionMock.mockResolvedValueOnce({
-      sessionId: 'sess_2',
-      conversationToken: 'tok_2',
-      livekitUrl: 'wss://lk.2',
-      expiresAt: '2026-01-01T00:00:00.000Z',
-    });
-
-    await VoiceConversation.create({
-      agentId: 'agent_x',
-      apiKey: 'sk_test',
-      apiBaseUrl: 'https://staging.speko.dev',
-    });
-
-    expect(requestSessionMock).toHaveBeenCalledWith({
-      agentId: 'agent_x',
-      apiKey: 'sk_test',
-      apiBaseUrl: 'https://staging.speko.dev',
-    });
-  });
-
-  it('forwards overrides and callbacks from the agent form to the connection', async () => {
-    requestSessionMock.mockResolvedValueOnce({
-      sessionId: 'sess_3',
-      conversationToken: 'tok_3',
-      livekitUrl: 'wss://lk.3',
-      expiresAt: '2026-01-01T00:00:00.000Z',
-    });
-
-    const onError = vi.fn();
-    await VoiceConversation.create({
-      agentId: 'agent_x',
-      apiKey: 'sk_test',
-      overrides: { tts: { voiceId: 'voice-1', speed: 1.1 } },
-      onError,
-    });
-
-    const init = firstConstructorArg() as {
-      overrides?: { tts?: { voiceId?: string } };
-      callbacks: { onError?: unknown };
-    };
-    expect(init.overrides?.tts?.voiceId).toBe('voice-1');
-    expect(init.callbacks.onError).toBe(onError);
-  });
-
-  it('propagates errors thrown by requestSession without opening a connection', async () => {
-    const failure = new Error('boom');
-    requestSessionMock.mockRejectedValueOnce(failure);
-
-    await expect(
-      VoiceConversation.create({
-        agentId: 'agent_x',
-        apiKey: 'sk_bad',
-      }),
-    ).rejects.toBe(failure);
-
-    expect(connectMock).not.toHaveBeenCalled();
-    expect(constructorSpy).not.toHaveBeenCalled();
   });
 });

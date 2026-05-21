@@ -3,7 +3,6 @@ export type { SpekoClientErrorCode } from './errors.js';
 export { SpekoClientError } from './errors.js';
 export { RealtimeVoiceConversation } from './realtime-voice-conversation.js';
 export type {
-  AgentConversationOptions,
   AgentOverrides,
   AudioConstraints,
   ConversationCallbacks,

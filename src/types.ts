@@ -74,31 +74,7 @@ export interface RealtimeConversationOptions extends ConversationCallbacks {
 }
 
 /**
- * Options for the `agentId`-based form of `VoiceConversation.create`. The SDK
- * mints a session against `POST /v1/sessions` using the supplied API key, then
- * hands the resulting token + LiveKit URL to the same code path as the
- * lower-level form.
- *
- * Use this when your app authenticates with a Speko API key directly. Use
- * {@link ConversationOptions} when your backend is the one minting sessions
- * and forwarding `conversationToken` + `livekitUrl` to the browser.
+ * `VoiceConversation.create` accepts short-lived session credentials minted by
+ * your backend. Do not pass long-lived Speko API keys to browser code.
  */
-export interface AgentConversationOptions extends ConversationCallbacks {
-  readonly agentId: string;
-  readonly apiKey: string;
-  /** Override the Speko API origin. Defaults to `https://api.speko.dev`. */
-  readonly apiBaseUrl?: string;
-  readonly overrides?: ConversationOverrides;
-  readonly inputDeviceId?: string;
-  readonly outputDeviceId?: string;
-  readonly audioConstraints?: AudioConstraints;
-}
-
-/**
- * `VoiceConversation.create` accepts either form. The lower-level
- * `ConversationOptions` form (token + livekitUrl) is the primary API and is
- * recommended for production apps that mint sessions on a server. The
- * `AgentConversationOptions` form is a convenience for browser-only apps and
- * embedded widgets that hold a Speko API key directly.
- */
-export type CreateOptions = ConversationOptions | AgentConversationOptions;
+export type CreateOptions = ConversationOptions;
