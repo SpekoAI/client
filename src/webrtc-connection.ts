@@ -74,7 +74,7 @@ export class WebRTCConnection {
       });
     } catch (err) {
       this.setStatus('disconnected');
-      throw new SpekoClientError('Failed to connect to LiveKit room', 'CONNECTION_FAILED', err);
+      throw new SpekoClientError('Failed to connect to media transport', 'CONNECTION_FAILED', err);
     }
 
     try {
@@ -93,7 +93,7 @@ export class WebRTCConnection {
       });
     } catch (err) {
       // Mic failure after the room is connected — tear down the room so
-      // we don't leave it open consuming LiveKit server resources until
+      // we don't leave it open consuming media transport resources until
       // the token expires.
       this.localTrack?.stop();
       this.localTrack = undefined;

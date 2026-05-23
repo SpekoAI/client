@@ -48,19 +48,43 @@ export interface ConversationCallbacks {
   onError?: (error: Error) => void;
 }
 
-export interface ConversationOptions extends ConversationCallbacks {
-  readonly conversationToken: string;
-  /**
-   * LiveKit WebSocket URL returned from `POST /v1/sessions`. Pass the value
-   * straight from the session response — the SDK does not default this so
-   * consumers can't accidentally ship against staging.
-   */
-  readonly livekitUrl: string;
+export interface ConversationCommonOptions extends ConversationCallbacks {
   readonly overrides?: ConversationOverrides;
   readonly inputDeviceId?: string;
   readonly outputDeviceId?: string;
   readonly audioConstraints?: AudioConstraints;
 }
+
+export interface TransportConversationOptions extends ConversationCommonOptions {
+  readonly transportToken: string;
+  /**
+   * Media transport URL returned from `POST /v1/sessions`. Pass the value
+   * straight from the session response — the SDK does not default this so
+   * consumers can't accidentally ship against the wrong environment.
+   */
+  readonly transportUrl: string;
+  /** @deprecated Use `transportToken`. */
+  readonly conversationToken?: string;
+  /** @deprecated Use `transportUrl`. */
+  readonly livekitUrl?: string;
+}
+
+export interface LegacyConversationOptions extends ConversationCommonOptions {
+  /** @deprecated Use `transportToken`. */
+  readonly conversationToken: string;
+  /**
+   * @deprecated Use `transportUrl`.
+   *
+   * WebSocket URL returned from `POST /v1/sessions`. Pass the value
+   * straight from the session response — the SDK does not default this so
+   * consumers can't accidentally ship against the wrong environment.
+   */
+  readonly livekitUrl: string;
+  readonly transportToken?: string;
+  readonly transportUrl?: string;
+}
+
+export type ConversationOptions = TransportConversationOptions | LegacyConversationOptions;
 
 export interface RealtimeConversationOptions extends ConversationCallbacks {
   readonly sessionId: string;

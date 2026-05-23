@@ -14,9 +14,23 @@ export class VoiceConversation {
    * your backend via `POST /v1/sessions`.
    */
   static async create(options: CreateOptions): Promise<VoiceConversation> {
+    const credentials = options as CreateOptions & {
+      readonly conversationToken?: string;
+      readonly livekitUrl?: string;
+      readonly transportToken?: string;
+      readonly transportUrl?: string;
+    };
+    const conversationToken = credentials.transportToken ?? credentials.conversationToken;
+    const livekitUrl = credentials.transportUrl ?? credentials.livekitUrl;
+    if (!conversationToken || !livekitUrl) {
+      throw new TypeError(
+        'VoiceConversation.create requires transportToken + transportUrl, or legacy conversationToken + livekitUrl.',
+      );
+    }
+
     const connection = new WebRTCConnection({
-      conversationToken: options.conversationToken,
-      livekitUrl: options.livekitUrl,
+      conversationToken,
+      livekitUrl,
       ...(options.overrides && { overrides: options.overrides }),
       ...(options.inputDeviceId !== undefined && {
         inputDeviceId: options.inputDeviceId,

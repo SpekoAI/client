@@ -1,7 +1,7 @@
 {
   "name": "@spekoai/client",
   "version": "0.0.4",
-  "description": "Browser SDK for SpekoAI — real-time voice conversations over LiveKit",
+  "description": "Browser SDK for SpekoAI — real-time voice conversations",
   "license": "MIT",
   "author": "Speko",
   "homepage": "https://github.com/SpekoAI/client#readme",

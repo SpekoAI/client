@@ -61,6 +61,23 @@ describe('VoiceConversation.create', () => {
     expect(Object.keys(init.callbacks)).toHaveLength(0);
   });
 
+  it('connects directly when given transportToken + transportUrl', async () => {
+    const conv = await VoiceConversation.create({
+      transportToken: 'tok_transport',
+      transportUrl: 'wss://transport.example',
+    });
+
+    expect(conv.getId()).toBe('conv_xyz');
+    expect(connectMock).toHaveBeenCalledTimes(1);
+
+    const init = firstConstructorArg() as {
+      conversationToken: string;
+      livekitUrl: string;
+    };
+    expect(init.conversationToken).toBe('tok_transport');
+    expect(init.livekitUrl).toBe('wss://transport.example');
+  });
+
   it('forwards overrides, audioConstraints, and callbacks to the connection', async () => {
     const onConnect = vi.fn();
     const onMessage = vi.fn();

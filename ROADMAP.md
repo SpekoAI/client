@@ -10,7 +10,7 @@ Deferred work beyond the v1 voice-only WebRTC release.
 ## Identifiers / auth flows
 
 - Public short-lived embed token flow — issue scoped browser-safe tokens without exposing a long-lived API key.
-- `wss://livekit.speko.dev` (prod) cutover — swap the default `livekitUrl` once production LiveKit is stood up. Until then, v1 defaults to staging.
+- Production media transport cutover — swap the default `transportUrl` once the production endpoint is stood up. Until then, v1 defaults to staging.
 
 ## Audio UX
 

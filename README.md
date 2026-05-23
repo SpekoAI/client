@@ -1,6 +1,6 @@
 # @spekoai/client
 
-Browser SDK for [SpekoAI](https://speko.ai) — real-time voice conversations in the browser over LiveKit WebRTC.
+Browser SDK for [SpekoAI](https://speko.ai) — real-time voice conversations in the browser.
 
 ## Install
 
@@ -18,8 +18,8 @@ Create a session from your backend (see [POST /v1/sessions](https://docs.speko.d
 import { VoiceConversation } from '@spekoai/client';
 
 const conversation = await VoiceConversation.create({
-  conversationToken, // from your server's POST /v1/sessions response
-  livekitUrl,        // from your server's POST /v1/sessions response
+  transportToken, // from your server's POST /v1/sessions response
+  transportUrl,   // from your server's POST /v1/sessions response
 
   onConnect: ({ conversationId }) => console.log('connected', conversationId),
   onDisconnect: ({ reason }) => console.log('disconnected', reason),
@@ -52,8 +52,10 @@ Do not pass Speko API keys to browser code.
 
 | Option             | Type                     | Description                                                                      |
 | ------------------ | ------------------------ | -------------------------------------------------------------------------------- |
-| `conversationToken`| `string`                 | LiveKit room token returned by your server.                                      |
-| `livekitUrl`       | `string`                 | LiveKit WebSocket URL returned by your server.                                   |
+| `transportToken`   | `string`                 | Browser-safe media transport token returned by your server.                      |
+| `transportUrl`     | `string`                 | Media transport URL returned by your server.                                     |
+
+`conversationToken` and `livekitUrl` are still accepted as legacy aliases.
 
 Shared options:
 
