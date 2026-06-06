@@ -14,11 +14,21 @@
   },
   "keywords": [
     "speko",
+    "spekoai",
     "voice-ai",
+    "voice-agent",
     "livekit",
     "webrtc",
     "browser",
-    "client"
+    "client",
+    "realtime",
+    "stt",
+    "tts",
+    "speech-to-text",
+    "text-to-speech",
+    "failover",
+    "fallback",
+    "multilingual"
   ],
   "type": "module",
   "main": "./dist/index.js",
