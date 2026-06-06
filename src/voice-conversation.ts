@@ -79,6 +79,15 @@ export class VoiceConversation {
     this.connection.publish({ type: 'user_message', text });
   }
 
+  /**
+   * Send a typed message to the agent over LiveKit's native text channel, so it
+   * responds with voice + transcription just like a spoken turn. Preferred over
+   * `sendUserMessage` when driving a LiveKit Agents worker.
+   */
+  async sendChatMessage(text: string): Promise<void> {
+    await this.connection.sendChatText(text);
+  }
+
   sendContextualUpdate(text: string): void {
     this.connection.publish({ type: 'contextual_update', text });
   }

@@ -9,6 +9,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  type TranscriptionSegment,
 } from 'livekit-client';
 import {
   decodePacket,
@@ -26,7 +27,12 @@ import type {
   ConversationStatus,
   DisconnectionDetails,
   DisconnectionReason,
+  MessageSource,
 } from './types.js';
+
+// LiveKit Agents' RoomIO listens for typed user input on this topic (textEnabled
+// defaults to true), treating each message as a user turn.
+const CHAT_TOPIC = 'lk.chat';
 
 export interface WebRTCConnectionInit {
   readonly conversationToken: string;
@@ -133,6 +139,19 @@ export class WebRTCConnection {
     void this.room.localParticipant.publishData(bytes, { reliable: true });
   }
 
+  // Send a typed user message over LiveKit's native text input (the `lk.chat`
+  // topic the agent's RoomIO listens on). The agent treats it as a user turn
+  // and replies with audio + transcription, exactly like a spoken turn.
+  async sendChatText(text: string): Promise<void> {
+    if (this.status !== 'connected') {
+      throw new SpekoClientError(
+        'Cannot send text before connection is established',
+        'NOT_CONNECTED',
+      );
+    }
+    await this.room.localParticipant.sendText(text, { topic: CHAT_TOPIC });
+  }
+
   async setMicMuted(muted: boolean): Promise<void> {
     if (this.localTrack) {
       if (muted) await this.localTrack.mute();
@@ -157,6 +176,9 @@ export class WebRTCConnection {
       this.handleTrackUnsubscribed(track, pub),
     );
     this.room.on(RoomEvent.DataReceived, (payload) => this.handleDataReceived(payload));
+    this.room.on(RoomEvent.TranscriptionReceived, (segments, participant) =>
+      this.handleTranscription(segments, participant),
+    );
     this.room.on(RoomEvent.ActiveSpeakersChanged, (speakers) =>
       this.handleActiveSpeakersChanged(speakers),
     );
@@ -210,6 +232,21 @@ export class WebRTCConnection {
   private forwardInbound(packet: InboundPacket): void {
     const message = packetToMessage(packet);
     if (message) this.callbacks.onMessage?.(message);
+  }
+
+  // LiveKit Agents (the Speko worker) publishes both the caller's STT and the
+  // agent's spoken text as native LiveKit transcriptions — not the custom data
+  // packets above. Surface them through onMessage so consumers get a live
+  // transcript regardless of transport. Attribution: segments from the local
+  // participant are the user; everything else is the agent.
+  private handleTranscription(segments: TranscriptionSegment[], participant?: Participant): void {
+    const localIdentity = this.room.localParticipant.identity;
+    const source: MessageSource =
+      participant && participant.identity === localIdentity ? 'user' : 'agent';
+    for (const segment of segments) {
+      if (!segment.text) continue;
+      this.callbacks.onMessage?.({ source, text: segment.text, isFinal: segment.final });
+    }
   }
 
   private handleActiveSpeakersChanged(speakers: Participant[]): void {
