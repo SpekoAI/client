@@ -15,6 +15,17 @@ export interface ConversationMessage {
   readonly source: MessageSource;
   readonly text: string;
   readonly isFinal: boolean;
+  /**
+   * Stable id of the underlying transcription segment, when the transport
+   * provides one (LiveKit transcriptions do). Segment updates are
+   * CUMULATIVE: the same id is re-delivered with growing `text` (the
+   * agent's transcript streams word-by-word; the user's re-publishes the
+   * full utterance per recognizer update, including a duplicate of the
+   * final). Renderers must upsert by `(source, segmentId)` — appending
+   * every message produces duplicated, interleaved bubbles. Absent for
+   * custom data-channel packets, which carry no segment identity.
+   */
+  readonly segmentId?: string;
 }
 
 export interface AgentOverrides {

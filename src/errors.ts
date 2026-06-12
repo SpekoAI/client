@@ -2,6 +2,11 @@ export type SpekoClientErrorCode =
   | 'CONNECTION_FAILED'
   | 'DISCONNECTED'
   | 'MICROPHONE_FAILED'
+  /**
+   * No longer raised: malformed inbound data packets are silently ignored
+   * (rooms carry non-protocol data from other publishers). Kept so existing
+   * `switch (err.code)` consumers keep compiling.
+   */
   | 'INVALID_MESSAGE'
   | 'NOT_CONNECTED'
   | 'SESSION_REQUEST_FAILED';

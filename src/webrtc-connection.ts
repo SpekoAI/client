@@ -221,9 +221,10 @@ export class WebRTCConnection {
   private handleDataReceived(payload: Uint8Array): void {
     const packet = decodePacket(payload);
     if (!packet) {
-      this.callbacks.onError?.(
-        new SpekoClientError('Received malformed data packet', 'INVALID_MESSAGE'),
-      );
+      // Not our wire protocol — rooms carry data from other publishers too
+      // (server control topics, future participants). Surfacing those as
+      // errors flipped consumers into a fatal error state mid-call over a
+      // packet that was never addressed to us; ignore instead.
       return;
     }
     this.forwardInbound(packet);
@@ -239,13 +240,24 @@ export class WebRTCConnection {
   // packets above. Surface them through onMessage so consumers get a live
   // transcript regardless of transport. Attribution: segments from the local
   // participant are the user; everything else is the agent.
+  //
+  // Segment updates are cumulative re-deliveries of the SAME id (the agent's
+  // transcript arrives word-by-word with growing text; the user's full
+  // utterance is re-published per recognizer update, final included), so the
+  // id must travel with each message — it is the only way a consumer can
+  // upsert instead of appending duplicates.
   private handleTranscription(segments: TranscriptionSegment[], participant?: Participant): void {
     const localIdentity = this.room.localParticipant.identity;
     const source: MessageSource =
       participant && participant.identity === localIdentity ? 'user' : 'agent';
     for (const segment of segments) {
       if (!segment.text) continue;
-      this.callbacks.onMessage?.({ source, text: segment.text, isFinal: segment.final });
+      this.callbacks.onMessage?.({
+        source,
+        text: segment.text,
+        isFinal: segment.final,
+        ...(segment.id ? { segmentId: segment.id } : {}),
+      });
     }
   }
 
