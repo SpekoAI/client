@@ -26,6 +26,16 @@ export interface ConversationMessage {
    * custom data-channel packets, which carry no segment identity.
    */
   readonly segmentId?: string;
+  /**
+   * Wall-clock time (ms epoch) the transport first received this segment.
+   * STABLE across the cumulative re-deliveries of a given `segmentId`, so it
+   * marks when the utterance *began*. Renderers should order bubbles by this
+   * rather than by message-arrival order: user and agent transcripts stream
+   * on separate paths with different latencies, so arrival order interleaves
+   * wrong when speech overlaps (a backchannel during the agent's turn lands
+   * above the agent's bubble). Absent for transports without segment timing.
+   */
+  readonly startedAt?: number;
 }
 
 export interface AgentOverrides {

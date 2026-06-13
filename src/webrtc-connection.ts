@@ -257,6 +257,12 @@ export class WebRTCConnection {
         text: segment.text,
         isFinal: segment.final,
         ...(segment.id ? { segmentId: segment.id } : {}),
+        // Stable per-segment receive time — lets consumers order bubbles by
+        // when each utterance began rather than by message-arrival order
+        // (which interleaves wrong when user/agent speech overlaps).
+        ...(Number.isFinite(segment.firstReceivedTime)
+          ? { startedAt: segment.firstReceivedTime }
+          : {}),
       });
     }
   }
