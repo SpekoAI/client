@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "declarationMap": true,
+    "importHelpers": true,
+    "isolatedModules": true,
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": ".tsbuildinfo/publish.tsbuildinfo",
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.spec.ts"],
+  "references": []
+}
