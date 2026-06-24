@@ -2,6 +2,7 @@ export { Conversation } from './conversation.js';
 export type { SpekoClientErrorCode } from './errors.js';
 export { SpekoClientError } from './errors.js';
 export { RealtimeVoiceConversation } from './realtime-voice-conversation.js';
+export { reconcileTranscript } from './transcript.js';
 export type {
   AgentOverrides,
   AudioConstraints,

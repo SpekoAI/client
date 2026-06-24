@@ -1,3 +1,4 @@
+import { reconcileTranscript } from './transcript.js';
 import type {
   ConversationMessage,
   ConversationMode,
@@ -32,6 +33,7 @@ export class RealtimeVoiceConversation {
   private mode: ConversationMode = 'listening';
   private micMuted = false;
   private volume = 1;
+  private _transcript: ConversationMessage[] = [];
 
   private constructor(options: RealtimeConversationOptions) {
     this.options = options;
@@ -51,6 +53,11 @@ export class RealtimeVoiceConversation {
 
   isOpen(): boolean {
     return this.status === 'connected' && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** The current reconciled transcript (deduped, ordered by startedAt). */
+  get transcript(): readonly ConversationMessage[] {
+    return this._transcript;
   }
 
   async endSession(): Promise<void> {
@@ -74,6 +81,8 @@ export class RealtimeVoiceConversation {
   }
 
   private async connect(): Promise<void> {
+    // Reset transcript on every fresh connect so reconnects don't carry stale turns.
+    this._transcript = [];
     this.setStatus('connecting');
     const ready = new Promise<ReadyFrame>((resolve, reject) => {
       const timer = setTimeout(
@@ -164,11 +173,17 @@ export class RealtimeVoiceConversation {
   private handleJson(parsed: Record<string, unknown>): Error | null {
     const t = parsed['t'];
     if (t === 'transcript') {
-      this.options.onMessage?.({
+      const msg: ConversationMessage = {
         source: parsed['role'] === 'user' ? 'user' : 'agent',
         text: String(parsed['text'] ?? ''),
         isFinal: Boolean(parsed['final']),
-      } satisfies ConversationMessage);
+      };
+      // (a) Back-compat: forward to the consumer's onMessage unchanged.
+      this.options.onMessage?.(msg);
+      // (b) Reconcile into the canonical list.
+      this._transcript = reconcileTranscript(this._transcript, msg);
+      // (c) Fire onTranscript with the full reconciled list.
+      this.options.onTranscript?.(this._transcript);
     } else if (t === 'interruption') {
       this.clearPlayback();
       this.setMode('listening');

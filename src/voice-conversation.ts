@@ -1,12 +1,21 @@
-import type { CreateOptions } from './types.js';
+import { reconcileTranscript } from './transcript.js';
+import type { ConversationMessage, CreateOptions } from './types.js';
 import { WebRTCConnection } from './webrtc-connection.js';
+
+// Shared mutable cell — the onMessage closure and the `transcript` getter
+// both reference the same object so the getter always sees the latest list.
+interface TranscriptCell {
+  list: ConversationMessage[];
+}
 
 export class VoiceConversation {
   private readonly connection: WebRTCConnection;
   private conversationId = '';
+  private readonly _cell: TranscriptCell;
 
-  private constructor(connection: WebRTCConnection) {
+  private constructor(connection: WebRTCConnection, cell: TranscriptCell) {
     this.connection = connection;
+    this._cell = cell;
   }
 
   /**
@@ -28,6 +37,19 @@ export class VoiceConversation {
       );
     }
 
+    const cell: TranscriptCell = { list: [] };
+    const consumerOnMessage = options.onMessage;
+    const consumerOnTranscript = options.onTranscript;
+
+    const wrappedOnMessage = (msg: ConversationMessage): void => {
+      // (a) Back-compat: forward to the consumer's onMessage unchanged.
+      consumerOnMessage?.(msg);
+      // (b) Reconcile into the canonical list.
+      cell.list = reconcileTranscript(cell.list, msg);
+      // (c) Fire onTranscript with the full reconciled list.
+      consumerOnTranscript?.(cell.list);
+    };
+
     const connection = new WebRTCConnection({
       conversationToken,
       livekitUrl,
@@ -44,15 +66,22 @@ export class VoiceConversation {
       callbacks: {
         ...(options.onConnect && { onConnect: options.onConnect }),
         ...(options.onDisconnect && { onDisconnect: options.onDisconnect }),
-        ...(options.onMessage && { onMessage: options.onMessage }),
+        // Always register our wrapped handler; it calls through to the consumer's onMessage.
+        onMessage: wrappedOnMessage,
         ...(options.onStatusChange && { onStatusChange: options.onStatusChange }),
         ...(options.onModeChange && { onModeChange: options.onModeChange }),
         ...(options.onError && { onError: options.onError }),
       },
     });
-    const conv = new VoiceConversation(connection);
+
+    const conv = new VoiceConversation(connection, cell);
     conv.conversationId = await connection.connect();
     return conv;
+  }
+
+  /** The current reconciled transcript (deduped, ordered by startedAt). */
+  get transcript(): readonly ConversationMessage[] {
+    return this._cell.list;
   }
 
   getId(): string {

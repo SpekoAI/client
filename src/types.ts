@@ -67,6 +67,10 @@ export interface ConversationCallbacks {
   onStatusChange?: (status: ConversationStatus) => void;
   onModeChange?: (mode: ConversationMode) => void;
   onError?: (error: Error) => void;
+  /** Emits the FULL reconciled transcript (deduped, coalesced, ordered) on every update.
+   * Prefer this over onMessage for rendering — the SDK owns reconciliation so consumers
+   * never reimplement upsert-by-(source,segmentId). */
+  onTranscript?: (transcript: readonly ConversationMessage[]) => void;
 }
 
 export interface ConversationCommonOptions extends ConversationCallbacks {

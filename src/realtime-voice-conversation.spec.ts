@@ -286,6 +286,65 @@ describe('RealtimeVoiceConversation', () => {
     await conversation.endSession();
   });
 
+  it('fires onTranscript with the reconciled list and transcript getter reflects it', async () => {
+    const onMessage = vi.fn();
+    const onTranscript = vi.fn();
+    const pending = RealtimeVoiceConversation.create({
+      sessionId: 'sess_transcript',
+      wsUrl: 'ws://localhost/v1/realtime/sess_transcript/ws',
+      wsToken: 'token',
+      onMessage,
+      onTranscript,
+    });
+    socket().message(
+      JSON.stringify({ t: 'ready', inputSampleRate: 24000, outputSampleRate: 24000 }),
+    );
+    const conversation = await pending;
+
+    // First transcript message (partial).
+    socket().message(
+      JSON.stringify({ t: 'transcript', role: 'agent', text: 'hello', final: false }),
+    );
+
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onTranscript).toHaveBeenCalledTimes(1);
+    const list1 = onTranscript.mock.calls[0]?.[0] as readonly { text: string }[];
+    expect(list1).toHaveLength(1);
+    expect(list1[0]?.text).toBe('hello');
+
+    // Second transcript message (same source, no segmentId — legacy coalesce
+    // replaces last same-source non-final entry).
+    socket().message(
+      JSON.stringify({ t: 'transcript', role: 'agent', text: 'hello world', final: true }),
+    );
+
+    expect(onTranscript).toHaveBeenCalledTimes(2);
+    const list2 = onTranscript.mock.calls[1]?.[0] as readonly { text: string; isFinal: boolean }[];
+    expect(list2).toHaveLength(1);
+    expect(list2[0]?.text).toBe('hello world');
+    expect(list2[0]?.isFinal).toBe(true);
+
+    // transcript getter reflects the latest state.
+    expect(conversation.transcript).toHaveLength(1);
+    expect(conversation.transcript[0]?.text).toBe('hello world');
+
+    await conversation.endSession();
+  });
+
+  it('transcript getter starts empty', async () => {
+    const pending = RealtimeVoiceConversation.create({
+      sessionId: 'sess_empty',
+      wsUrl: 'ws://localhost/v1/realtime/sess_empty/ws',
+      wsToken: 'token',
+    });
+    socket().message(
+      JSON.stringify({ t: 'ready', inputSampleRate: 24000, outputSampleRate: 24000 }),
+    );
+    const conversation = await pending;
+    expect(conversation.transcript).toEqual([]);
+    await conversation.endSession();
+  });
+
   it('uses provider error frames as the startup rejection when the socket closes before ready', async () => {
     const onError = vi.fn();
     const pending = RealtimeVoiceConversation.create({
