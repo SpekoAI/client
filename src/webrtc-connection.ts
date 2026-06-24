@@ -34,15 +34,6 @@ import type {
 // defaults to true), treating each message as a user turn.
 const CHAT_TOPIC = 'lk.chat';
 
-// Instant barge-in duck: the moment the caller speaks over the agent, silence the
-// agent's <audio> so its already-buffered audio can't keep draining (the
-// jitter-buffer tail) while the worker decides to yield. Restore when the agent's
-// next reply begins, or after a short fallback if the caller only backchanneled
-// and the agent never actually yielded.
-const BARGE_IN_MIC_RMS = 0.03; // local-mic RMS (0..1) above which the caller is talking
-const BARGE_IN_POLL_MS = 40; // onset poll cadence (ms)
-const BARGE_IN_FALLBACK_MS = 1200; // restore if the agent never yields (false barge-in)
-
 export interface WebRTCConnectionInit {
   readonly conversationToken: string;
   readonly livekitUrl: string;
@@ -62,12 +53,6 @@ export class WebRTCConnection {
   private mode: ConversationMode = 'listening';
   private localTrack?: LocalAudioTrack;
   private volume = 1;
-  // Instant barge-in duck state (see startBargeInDuck).
-  private agentDucked = false;
-  private agentWentSilentSinceDuck = false;
-  private bargeInCtx?: AudioContext;
-  private bargeInTimer?: ReturnType<typeof setInterval>;
-  private bargeInFallback?: ReturnType<typeof setTimeout>;
 
   constructor(private readonly init: WebRTCConnectionInit) {
     this.callbacks = init.callbacks;
@@ -130,7 +115,6 @@ export class WebRTCConnection {
       this.publish({ type: 'overrides', overrides: this.init.overrides });
     }
 
-    this.startBargeInDuck();
     this.callbacks.onConnect?.({ conversationId });
     return conversationId;
   }
@@ -179,14 +163,9 @@ export class WebRTCConnection {
 
   setVolume(volume: number): void {
     this.volume = Math.max(0, Math.min(1, volume));
-    this.applyAgentVolume();
-  }
-
-  // Single point that sets agent <audio> volume, honoring the barge-in duck:
-  // while ducked the agent is silenced; otherwise it plays at the set volume.
-  private applyAgentVolume(): void {
-    const v = this.agentDucked ? 0 : this.volume;
-    for (const el of this.audioElements) el.volume = v;
+    for (const el of this.audioElements) {
+      el.volume = this.volume;
+    }
   }
 
   private bindRoomEvents(): void {
@@ -214,7 +193,7 @@ export class WebRTCConnection {
     const audio = track as RemoteAudioTrack;
     const el = audio.attach();
     el.autoplay = true;
-    el.volume = this.agentDucked ? 0 : this.volume;
+    el.volume = this.volume;
     el.style.display = 'none';
     if (typeof document !== 'undefined') {
       document.body.appendChild(el);
@@ -296,7 +275,6 @@ export class WebRTCConnection {
 
   private handleDisconnected(reason: DisconnectReason | undefined): void {
     this.setStatus('disconnected');
-    this.stopBargeInDuck();
     // Release the OS-level microphone capture so the browser indicator
     // stops after the call ends.
     this.localTrack?.stop();
@@ -316,89 +294,6 @@ export class WebRTCConnection {
     if (this.mode === mode) return;
     this.mode = mode;
     this.callbacks.onModeChange?.(mode);
-  }
-
-  // ── Instant barge-in duck ──────────────────────────────────────────────────
-  // Tap the (already-published) local mic; the instant the caller speaks while
-  // the agent is talking, silence the agent's <audio> so its buffered audio can't
-  // drain. Restore when the agent's reply resumes — it goes silent (the worker
-  // yielded) then speaks again — or after a fallback if the agent never yields
-  // (a backchannel that wasn't a real interrupt). Mode ('speaking'/'listening')
-  // tracks the agent's REAL track energy via ActiveSpeakers, unaffected by the
-  // playback-volume mute, so it cleanly signals yield + reply-resume. Best-effort:
-  // any failure (AudioContext blocked, no mic) leaves playback untouched.
-  private startBargeInDuck(): void {
-    if (typeof window === 'undefined' || !this.localTrack) return;
-    const Ctor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    const micTrack = this.localTrack.mediaStreamTrack;
-    if (!Ctor || !micTrack) return;
-    try {
-      const ctx = new Ctor();
-      this.bargeInCtx = ctx;
-      if (ctx.state === 'suspended') void ctx.resume();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      ctx.createMediaStreamSource(new MediaStream([micTrack])).connect(analyser);
-      const buf = new Float32Array(analyser.fftSize);
-      this.bargeInTimer = setInterval(() => {
-        analyser.getFloatTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-        const micRms = Math.sqrt(sum / buf.length);
-        const agentSpeaking = this.mode === 'speaking';
-        if (!this.agentDucked) {
-          if (micRms > BARGE_IN_MIC_RMS && agentSpeaking) this.duckAgent();
-        } else if (!agentSpeaking) {
-          // The interrupted audio drained / the worker yielded — arm the restore.
-          this.agentWentSilentSinceDuck = true;
-        } else if (this.agentWentSilentSinceDuck) {
-          // Agent resumed after going silent → that's the fresh reply.
-          this.restoreAgent();
-        }
-      }, BARGE_IN_POLL_MS);
-    } catch {
-      this.stopBargeInDuck();
-    }
-  }
-
-  private duckAgent(): void {
-    if (this.agentDucked) return;
-    this.agentDucked = true;
-    this.agentWentSilentSinceDuck = false;
-    this.applyAgentVolume();
-    // Safety net: a backchannel ("mm-hmm") makes the caller "speak" without the
-    // worker yielding, so the agent never goes silent. Un-duck after a short
-    // window so we don't permanently mute an agent that isn't being interrupted.
-    if (this.bargeInFallback) clearTimeout(this.bargeInFallback);
-    this.bargeInFallback = setTimeout(() => this.restoreAgent(), BARGE_IN_FALLBACK_MS);
-  }
-
-  private restoreAgent(): void {
-    if (this.bargeInFallback) {
-      clearTimeout(this.bargeInFallback);
-      this.bargeInFallback = undefined;
-    }
-    if (!this.agentDucked) return;
-    this.agentDucked = false;
-    this.agentWentSilentSinceDuck = false;
-    this.applyAgentVolume();
-  }
-
-  private stopBargeInDuck(): void {
-    if (this.bargeInTimer) {
-      clearInterval(this.bargeInTimer);
-      this.bargeInTimer = undefined;
-    }
-    if (this.bargeInFallback) {
-      clearTimeout(this.bargeInFallback);
-      this.bargeInFallback = undefined;
-    }
-    this.bargeInCtx?.close().catch(() => undefined);
-    this.bargeInCtx = undefined;
-    this.agentDucked = false;
-    this.agentWentSilentSinceDuck = false;
   }
 }
 
