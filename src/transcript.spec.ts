@@ -119,6 +119,100 @@ describe('reconcileTranscript — ordering by startedAt', () => {
   });
 });
 
+// ─── interim → final coalescing for one utterance ────────────────────────────
+//
+// Reproduces the "Test agent" dialog dup: the live transcript rendered each
+// utterance TWICE — an italic interim (isFinal=false) immediately followed by a
+// solid final (isFinal=true) — for both the user and the agent. The dialog does
+// NO merging of its own (it renders `transcript` by array index), so two entries
+// per utterance means the reconciler returned two. LiveKit's user-STT path
+// publishes the interim under one segment id and then commits the FINAL under a
+// *different* id, so a strict (source, segmentId) upsert never coalesces them and
+// the final is appended as a second bubble.
+
+describe('reconcileTranscript — interim → final coalescing', () => {
+  it('(g) a final supersedes the prior interim of the same source even when segmentId differs', () => {
+    let t: readonly ConversationMessage[] = [];
+    // LiveKit STT: interim arrives under one id…
+    t = reconcileTranscript(
+      t,
+      user('What do you have on the', { segmentId: 'u-interim', isFinal: false, startedAt: 1000 }),
+    );
+    // …then the committed final arrives under a DIFFERENT id.
+    t = reconcileTranscript(
+      t,
+      user('What do you have on the menu?', {
+        segmentId: 'u-final',
+        isFinal: true,
+        startedAt: 1000,
+      }),
+    );
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('What do you have on the menu?');
+    expect(t[0]?.isFinal).toBe(true);
+    // The final inherits the interim's start time so the bubble doesn't reshuffle.
+    expect(t[0]?.startedAt).toBe(1000);
+  });
+
+  it('(h) interleaved user/agent interims each coalesce into a single final bubble', () => {
+    let t: readonly ConversationMessage[] = [];
+    // Agent greeting streams word-by-word (same id), then commits its final
+    // under a fresh id — same pattern the user STT path uses.
+    t = reconcileTranscript(
+      t,
+      agent('Welcome to', { segmentId: 'a-i', isFinal: false, startedAt: 100 }),
+    );
+    t = reconcileTranscript(
+      t,
+      agent('Welcome to Tony', { segmentId: 'a-i', isFinal: false, startedAt: 100 }),
+    );
+    // User starts talking while the agent's bubble is still interim.
+    t = reconcileTranscript(
+      t,
+      user('What do', { segmentId: 'u-i', isFinal: false, startedAt: 200 }),
+    );
+    // Agent commits its final under a new id.
+    t = reconcileTranscript(
+      t,
+      agent("Welcome to Tony's Pizzeria!", { segmentId: 'a-f', isFinal: true, startedAt: 100 }),
+    );
+    // User commits its final under a new id.
+    t = reconcileTranscript(
+      t,
+      user('What do you have on the menu?', { segmentId: 'u-f', isFinal: true, startedAt: 200 }),
+    );
+
+    expect(t).toHaveLength(2);
+    expect(t[0]).toMatchObject({
+      source: 'agent',
+      text: "Welcome to Tony's Pizzeria!",
+      isFinal: true,
+    });
+    expect(t[1]).toMatchObject({
+      source: 'user',
+      text: 'What do you have on the menu?',
+      isFinal: true,
+    });
+  });
+
+  it('(i) a redelivered final does NOT collapse into an earlier finalized turn of the same source', () => {
+    // Guard against over-coalescing: once a turn is final, a LATER distinct
+    // turn from the same source must stay separate even though the earlier one
+    // is final and shares the source.
+    let t: readonly ConversationMessage[] = [];
+    t = reconcileTranscript(
+      t,
+      user('first turn', { segmentId: 'u1', isFinal: true, startedAt: 100 }),
+    );
+    t = reconcileTranscript(
+      t,
+      user('second turn', { segmentId: 'u2', isFinal: true, startedAt: 200 }),
+    );
+    expect(t).toHaveLength(2);
+    expect(t.map((m) => m.text)).toEqual(['first turn', 'second turn']);
+  });
+});
+
 // ─── legacy no-segmentId coalesce path ───────────────────────────────────────
 
 describe('reconcileTranscript — legacy no-segmentId coalesce path', () => {

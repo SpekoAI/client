@@ -10,9 +10,19 @@ import type { ConversationMessage } from './types.js';
  * - When `incoming.segmentId` is defined: UPSERT by (source, segmentId) —
  *   find the existing entry with the same source AND segmentId and REPLACE it
  *   in place, preserving the original `startedAt` so cumulative re-deliveries
- *   don't reshuffle the bubble. If none found, append.
- * - When `incoming.segmentId` is undefined (legacy data-channel path): if the
- *   last entry has the same source and is NOT final, replace it; otherwise append.
+ *   don't reshuffle the bubble. If no (source, segmentId) match exists, the
+ *   message belongs to a turn we haven't keyed yet — but LiveKit's user-STT
+ *   path publishes the interim under one segment id and then commits the FINAL
+ *   under a *different* id, so a strict id match would append the final as a
+ *   SECOND bubble next to its own interim. To coalesce, a FINAL with no id
+ *   match falls back to the trailing non-final entry of the same source (its
+ *   in-flight interim) and replaces that. The fallback is scoped to finals:
+ *   distinct interim segments from one source can legitimately coexist, so an
+ *   id-less interim stays a genuinely new bubble. Append only when there is no
+ *   open interim to supersede.
+ * - When `incoming.segmentId` is undefined (legacy data-channel / realtime
+ *   path): if the last entry has the same source and is NOT final, replace it;
+ *   otherwise append.
  * - After upsert/append, return a NEW array STABLE-SORTED by `startedAt`
  *   ascending. Entries without `startedAt` keep their relative arrival order.
  *
@@ -37,14 +47,24 @@ export function reconcileTranscript(
     }
   } else {
     // Segment-keyed upsert path.
-    const idx = prev.findIndex(
+    let idx = prev.findIndex(
       (m) => m.segmentId === incoming.segmentId && m.source === incoming.source,
     );
+    // No exact (source, segmentId) match. A committed FINAL can carry a
+    // different id than the interim it supersedes (LiveKit user STT), so before
+    // appending a fresh bubble, coalesce a final into this source's still-open
+    // interim if one exists. Scoped to finals: distinct interim segments from
+    // the same source can legitimately coexist (each is its own in-flight id),
+    // so an interim that doesn't match an id is a genuinely new bubble.
+    if (idx === -1 && incoming.isFinal) {
+      idx = lastOpenInterimIndex(prev, incoming.source);
+    }
     if (idx === -1) {
       next = [...prev, incoming];
     } else {
       // Replace in place, preserving the original utterance start time so the
-      // cumulative re-deliveries don't reshuffle the bubble.
+      // cumulative re-deliveries (and interim→final supersession) don't
+      // reshuffle the bubble.
       const merged: ConversationMessage = {
         ...incoming,
         startedAt: prev[idx]?.startedAt ?? incoming.startedAt,
@@ -55,6 +75,24 @@ export function reconcileTranscript(
   }
 
   return stableSortByStartedAt(next);
+}
+
+/**
+ * Index of the trailing not-yet-final entry for `source` — the utterance still
+ * streaming for that speaker. Finalized turns are never targeted, so a later
+ * distinct turn from the same source never collapses into an earlier finalized
+ * one. Returns -1 when this source has no open interim.
+ */
+function lastOpenInterimIndex(
+  messages: readonly ConversationMessage[],
+  source: ConversationMessage['source'],
+): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m === undefined || m.source !== source) continue;
+    return m.isFinal ? -1 : i;
+  }
+  return -1;
 }
 
 /**
