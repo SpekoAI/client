@@ -71,6 +71,9 @@ export class VoiceConversation {
         ...(options.onStatusChange && { onStatusChange: options.onStatusChange }),
         ...(options.onModeChange && { onModeChange: options.onModeChange }),
         ...(options.onError && { onError: options.onError }),
+        ...(options.onAudioPlaybackBlocked && {
+          onAudioPlaybackBlocked: options.onAudioPlaybackBlocked,
+        }),
       },
     });
 
@@ -102,6 +105,19 @@ export class VoiceConversation {
 
   setVolume(volume: number): void {
     this.connection.setVolume(volume);
+  }
+
+  /** True when the browser is currently allowing the agent's audio to play. */
+  get canPlaybackAudio(): boolean {
+    return this.connection.canPlaybackAudio;
+  }
+
+  /**
+   * Resume agent audio after an autoplay block. Call from a user-gesture handler
+   * (e.g. a "tap to unmute" button shown when `onAudioPlaybackBlocked` fires).
+   */
+  async startAudioPlayback(): Promise<void> {
+    await this.connection.startAudioPlayback();
   }
 
   sendUserMessage(text: string): void {

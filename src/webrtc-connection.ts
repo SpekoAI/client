@@ -168,6 +168,28 @@ export class WebRTCConnection {
     }
   }
 
+  /** True when the browser is currently allowing the agent's audio to play. */
+  get canPlaybackAudio(): boolean {
+    return this.room.canPlaybackAudio;
+  }
+
+  /**
+   * Resume agent audio after an autoplay block. MUST be called from within a
+   * user-gesture handler (click/tap) for the browser to allow it. Calls
+   * LiveKit's `startAudio()` and retries playback on every attached element.
+   * Safe to call when not blocked (no-op).
+   */
+  async startAudioPlayback(): Promise<void> {
+    try {
+      await this.room.startAudio();
+    } catch (err) {
+      this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
+    for (const el of this.audioElements) {
+      void el.play().catch(() => undefined);
+    }
+  }
+
   private bindRoomEvents(): void {
     this.room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) =>
       this.handleTrackSubscribed(track, participant),
@@ -185,6 +207,16 @@ export class WebRTCConnection {
     this.room.on(RoomEvent.Disconnected, (reason) => this.handleDisconnected(reason));
     this.room.on(RoomEvent.MediaDevicesError, (err) => {
       this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+    });
+    // Autoplay policy: browsers (and embedded webviews) block audio that isn't
+    // tied to a fresh user gesture. When that happens the agent is "speaking"
+    // but the user hears NOTHING and no error is thrown — the silent-call
+    // failure mode. LiveKit reports it here; surface it so the consumer can
+    // show a tap-to-unmute affordance and call `startAudioPlayback()`.
+    this.room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+      if (!this.room.canPlaybackAudio) {
+        this.callbacks.onAudioPlaybackBlocked?.();
+      }
     });
   }
 
@@ -207,6 +239,16 @@ export class WebRTCConnection {
       });
     }
     this.audioElements.add(el);
+
+    // Don't rely on the `autoplay` attribute alone — explicitly play and catch
+    // the autoplay-block rejection. Without this, a blocked agent track fails
+    // SILENTLY (no audio, no error). On block, surface it so the consumer can
+    // recover via `startAudioPlayback()` from a user gesture.
+    void el.play().catch(() => {
+      if (!this.room.canPlaybackAudio) {
+        this.callbacks.onAudioPlaybackBlocked?.();
+      }
+    });
   }
 
   private handleTrackUnsubscribed(track: RemoteTrack, _pub: RemoteTrackPublication): void {

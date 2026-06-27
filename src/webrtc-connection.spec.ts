@@ -16,6 +16,8 @@ vi.mock('livekit-client', () => {
   class FakeRoom {
     localParticipant = { identity: 'local-user' };
     name = 'room_test';
+    canPlaybackAudio = true;
+    startAudio = vi.fn(async () => {});
     on(event: string, cb: Handler): this {
       handlers.set(event, cb);
       return this;
@@ -33,6 +35,7 @@ vi.mock('livekit-client', () => {
       ActiveSpeakersChanged: 'activeSpeakersChanged',
       Disconnected: 'disconnected',
       MediaDevicesError: 'mediaDevicesError',
+      AudioPlaybackStatusChanged: 'audioPlaybackStatusChanged',
     },
     Track: { Kind: { Audio: 'audio' }, Source: { Microphone: 'microphone' } },
     DisconnectReason: { CLIENT_INITIATED: 1 },
@@ -46,17 +49,23 @@ function setup() {
   handlers.clear();
   const onMessage = vi.fn<(message: ConversationMessage) => void>();
   const onError = vi.fn();
-  new WebRTCConnection({
+  const onAudioPlaybackBlocked = vi.fn();
+  const connection = new WebRTCConnection({
     conversationToken: 'token',
     livekitUrl: 'wss://example.test',
-    callbacks: { onMessage, onError },
+    callbacks: { onMessage, onError, onAudioPlaybackBlocked },
   });
   const fire = (event: string, ...args: unknown[]) => {
     const handler = handlers.get(event);
     if (!handler) throw new Error(`no handler bound for ${event}`);
     handler(...args);
   };
-  return { onMessage, onError, fire };
+  // The fake Room carries the autoplay fields the real livekit Room exposes.
+  const room = connection.roomInstance as unknown as {
+    canPlaybackAudio: boolean;
+    startAudio: ReturnType<typeof vi.fn>;
+  };
+  return { onMessage, onError, onAudioPlaybackBlocked, fire, room, connection };
 }
 
 describe('WebRTCConnection transcription handling', () => {
@@ -157,5 +166,32 @@ describe('WebRTCConnection transcription handling', () => {
 
     expect(onMessage).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
+  });
+});
+
+describe('WebRTCConnection autoplay / audio playback recovery', () => {
+  beforeEach(() => {
+    handlers.clear();
+  });
+
+  it('fires onAudioPlaybackBlocked when the browser blocks the agent audio', () => {
+    const { onAudioPlaybackBlocked, room, fire } = setup();
+    // Browser blocked autoplay → LiveKit reports canPlaybackAudio=false.
+    room.canPlaybackAudio = false;
+    fire('audioPlaybackStatusChanged');
+    expect(onAudioPlaybackBlocked).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fire when playback is allowed', () => {
+    const { onAudioPlaybackBlocked, room, fire } = setup();
+    room.canPlaybackAudio = true;
+    fire('audioPlaybackStatusChanged');
+    expect(onAudioPlaybackBlocked).not.toHaveBeenCalled();
+  });
+
+  it('startAudioPlayback() resumes via LiveKit startAudio() (for a user-gesture handler)', async () => {
+    const { connection, room } = setup();
+    await connection.startAudioPlayback();
+    expect(room.startAudio).toHaveBeenCalledTimes(1);
   });
 });

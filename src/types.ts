@@ -67,6 +67,11 @@ export interface ConversationCallbacks {
   onStatusChange?: (status: ConversationStatus) => void;
   onModeChange?: (mode: ConversationMode) => void;
   onError?: (error: Error) => void;
+  /** Fires when the browser blocks the agent's audio from auto-playing (autoplay
+   * policy / no fresh user gesture) — the agent is producing audio but the user
+   * hears NOTHING and no error is thrown. Show a tap-to-unmute affordance and
+   * call `startAudioPlayback()` from the resulting user-gesture handler to recover. */
+  onAudioPlaybackBlocked?: () => void;
   /** Emits the FULL reconciled transcript (deduped, coalesced, ordered) on every update.
    * Prefer this over onMessage for rendering — the SDK owns reconciliation so consumers
    * never reimplement upsert-by-(source,segmentId). */
