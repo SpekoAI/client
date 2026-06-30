@@ -133,7 +133,12 @@ export class VoiceConversation {
     await this.connection.sendChatText(text);
   }
 
+  /**
+   * Inject background context the agent should know but NOT reply to (it's woven
+   * into the agent's instructions, not spoken back). Sent on the worker's control
+   * topic so the agent receives it without treating it as a user turn.
+   */
   sendContextualUpdate(text: string): void {
-    this.connection.publish({ type: 'contextual_update', text });
+    this.connection.publishControl({ type: 'contextual_update', text });
   }
 }

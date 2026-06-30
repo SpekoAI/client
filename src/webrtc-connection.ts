@@ -34,6 +34,11 @@ import type {
 // defaults to true), treating each message as a user turn.
 const CHAT_TOPIC = 'lk.chat';
 
+// The agent worker's control channel (its RoomEvent.DataReceived handler filters
+// on this topic). For out-of-band signals the agent acts on but does NOT treat as
+// a spoken user turn — e.g. a `contextual_update` that injects background context.
+const CONTROL_TOPIC = 'speko.control';
+
 export interface WebRTCConnectionInit {
   readonly conversationToken: string;
   readonly livekitUrl: string;
@@ -137,6 +142,23 @@ export class WebRTCConnection {
     }
     const bytes = encodePacket(packet);
     void this.room.localParticipant.publishData(bytes, { reliable: true });
+  }
+
+  /**
+   * Publish a control packet on the agent worker's control topic
+   * (`speko.control`) so the worker's `RoomEvent.DataReceived` handler receives it.
+   * Unlike `publish` (default topic, which the worker does not read), this reaches
+   * the agent — used for `contextual_update` background context, never a user turn.
+   */
+  publishControl(packet: OutboundPacket): void {
+    if (this.status !== 'connected') {
+      throw new SpekoClientError(
+        'Cannot send data before connection is established',
+        'NOT_CONNECTED',
+      );
+    }
+    const bytes = encodePacket(packet);
+    void this.room.localParticipant.publishData(bytes, { reliable: true, topic: CONTROL_TOPIC });
   }
 
   // Send a typed user message over LiveKit's native text input (the `lk.chat`
