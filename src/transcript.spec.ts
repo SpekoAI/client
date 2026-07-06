@@ -58,13 +58,20 @@ describe('reconcileTranscript — segmentId upsert path', () => {
     expect(t[0]?.isFinal).toBe(true);
   });
 
-  it('(c) two different segmentIds from the same source stay separate', () => {
+  it('(c) two consecutive segments from the same source coalesce into one turn', () => {
+    // Behavior change (scattered-transcript fix): LiveKit's user STT commits
+    // MULTIPLE segments (distinct ids) for one uninterrupted speaker-turn — it
+    // segments on pauses. Consecutive same-source segments therefore belong to
+    // ONE turn and must render as ONE bubble, not scatter into one bubble per
+    // segment. A turn ends only when the OTHER source speaks (see the
+    // source-change guard below).
     let t: readonly ConversationMessage[] = [];
     t = reconcileTranscript(t, agent('first turn', { segmentId: 's1', isFinal: true }));
     t = reconcileTranscript(t, agent('second turn', { segmentId: 's2', isFinal: false }));
-    expect(t).toHaveLength(2);
-    expect(t[0]?.text).toBe('first turn');
-    expect(t[1]?.text).toBe('second turn');
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('first turn second turn');
+    // Trailing segment is still interim, so the coalesced turn is not final.
+    expect(t[0]?.isFinal).toBe(false);
   });
 
   it('(d) user vs agent kept separate even when segmentId collides across sources', () => {
@@ -102,10 +109,13 @@ describe('reconcileTranscript — ordering by startedAt', () => {
   });
 
   it('entries without startedAt keep their insertion order relative to each other', () => {
+    // Distinct turns (alternating source) with no startedAt must keep arrival
+    // order. Sources alternate so each is a genuine new turn — consecutive
+    // SAME-source segments would coalesce (see the turn-coalescing block).
     let t: readonly ConversationMessage[] = [];
     t = reconcileTranscript(t, agent('first', { segmentId: 's1' }));
-    t = reconcileTranscript(t, agent('second', { segmentId: 's2' }));
-    t = reconcileTranscript(t, agent('third', { segmentId: 's3' }));
+    t = reconcileTranscript(t, user('second', { segmentId: 'u1' }));
+    t = reconcileTranscript(t, agent('third', { segmentId: 's2' }));
     expect(t.map((m) => m.text)).toEqual(['first', 'second', 'third']);
   });
 
@@ -195,21 +205,140 @@ describe('reconcileTranscript — interim → final coalescing', () => {
     });
   });
 
-  it('(i) a redelivered final does NOT collapse into an earlier finalized turn of the same source', () => {
-    // Guard against over-coalescing: once a turn is final, a LATER distinct
-    // turn from the same source must stay separate even though the earlier one
-    // is final and shares the source.
+  it('(i) a same-source turn after the OTHER source speaks stays separate (no over-coalescing across a source change)', () => {
+    // Guard against over-coalescing: the turn boundary is a SOURCE CHANGE.
+    // Once the other source (agent) speaks, the next same-source (user) segment
+    // opens a NEW bubble — it must not merge back into the earlier user turn.
     let t: readonly ConversationMessage[] = [];
     t = reconcileTranscript(
       t,
       user('first turn', { segmentId: 'u1', isFinal: true, startedAt: 100 }),
     );
+    t = reconcileTranscript(t, agent('go on', { segmentId: 'a1', isFinal: true, startedAt: 150 }));
     t = reconcileTranscript(
       t,
       user('second turn', { segmentId: 'u2', isFinal: true, startedAt: 200 }),
     );
-    expect(t).toHaveLength(2);
-    expect(t.map((m) => m.text)).toEqual(['first turn', 'second turn']);
+    expect(t).toHaveLength(3);
+    expect(t.map((m) => m.text)).toEqual(['first turn', 'go on', 'second turn']);
+  });
+});
+
+// ─── multi-segment turn coalescing (the "scattered user transcript" fix) ──────
+//
+// Reproduces the prod bug: LiveKit's user STT commits MULTIPLE FINAL segments
+// (each a distinct segmentId — it segments on pauses) for ONE uninterrupted
+// speaker-turn. The old reducer keyed one bubble per segmentId and only merged
+// an interim→final WITHIN a segment, so consecutive FINAL segments of one turn
+// each became their own bubble:
+//   You: Okay
+//   You: , am
+//   You: I audible
+// The fix coalesces consecutive same-source segments into one turn bubble; a
+// turn ends only when the OTHER source speaks.
+
+describe('reconcileTranscript — multi-segment turn coalescing', () => {
+  it('(j) multiple FINAL segments of one turn (no interims) coalesce into ONE bubble', () => {
+    let t: readonly ConversationMessage[] = [];
+    t = reconcileTranscript(t, user('Okay', { segmentId: 's1', isFinal: true, startedAt: 1000 }));
+    t = reconcileTranscript(t, user(', am', { segmentId: 's2', isFinal: true, startedAt: 1200 }));
+    t = reconcileTranscript(
+      t,
+      user('I audible', { segmentId: 's3', isFinal: true, startedAt: 1400 }),
+    );
+    expect(t).toHaveLength(1);
+    // Fragments joined in arrival order; no space before leading punctuation.
+    expect(t[0]?.text).toBe('Okay, am I audible');
+    expect(t[0]?.isFinal).toBe(true);
+    // The coalesced turn keeps the FIRST segment's startedAt so it never reshuffles.
+    expect(t[0]?.startedAt).toBe(1000);
+  });
+
+  it('(k) interim→final across TWO segments in one turn yields ONE bubble with the joined finals', () => {
+    let t: readonly ConversationMessage[] = [];
+    // Segment 1 streams then commits under the same id.
+    t = reconcileTranscript(t, user('What', { segmentId: 's1', isFinal: false, startedAt: 1000 }));
+    t = reconcileTranscript(
+      t,
+      user('What time', { segmentId: 's1', isFinal: true, startedAt: 1000 }),
+    );
+    // After seg-1 finalizes, seg-2 begins in the SAME turn (other source silent).
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('What time');
+
+    t = reconcileTranscript(t, user('is it', { segmentId: 's2', isFinal: false, startedAt: 1300 }));
+    // The new interim extends the SAME turn — no new bubble, no duplication.
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('What time is it');
+    expect(t[0]?.isFinal).toBe(false);
+
+    t = reconcileTranscript(t, user('is it?', { segmentId: 's2', isFinal: true, startedAt: 1300 }));
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('What time is it?');
+    expect(t[0]?.isFinal).toBe(true);
+    expect(t[0]?.startedAt).toBe(1000);
+  });
+
+  it('(l) a re-delivered CUMULATIVE interim of a later segment updates only that segment, never double-appends', () => {
+    // The correctness trap: interims are re-delivered cumulatively per segmentId
+    // (they REPLACE), finals are one-shot. A grown interim for seg-2 must update
+    // ONLY seg-2's contribution to the turn, leaving seg-1's final intact and
+    // never appending seg-2's text twice.
+    let t: readonly ConversationMessage[] = [];
+    t = reconcileTranscript(t, user('one', { segmentId: 's1', isFinal: false, startedAt: 10 }));
+    t = reconcileTranscript(t, user('one', { segmentId: 's1', isFinal: true, startedAt: 10 }));
+    t = reconcileTranscript(t, user('two', { segmentId: 's2', isFinal: false, startedAt: 20 }));
+    expect(t[0]?.text).toBe('one two');
+    // seg-2's interim is re-delivered, grown (cumulative) — REPLACE, don't append.
+    t = reconcileTranscript(
+      t,
+      user('two three', { segmentId: 's2', isFinal: false, startedAt: 20 }),
+    );
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('one two three');
+    // Committed final for seg-2, then re-delivered — still no duplication.
+    t = reconcileTranscript(
+      t,
+      user('two three', { segmentId: 's2', isFinal: true, startedAt: 20 }),
+    );
+    t = reconcileTranscript(
+      t,
+      user('two three', { segmentId: 's2', isFinal: true, startedAt: 20 }),
+    );
+    expect(t).toHaveLength(1);
+    expect(t[0]?.text).toBe('one two three');
+    expect(t[0]?.isFinal).toBe(true);
+  });
+
+  it('(m) user turn → agent turn → user turn produces THREE bubbles', () => {
+    let t: readonly ConversationMessage[] = [];
+    t = reconcileTranscript(t, user('hi', { segmentId: 'u1', isFinal: true, startedAt: 100 }));
+    t = reconcileTranscript(
+      t,
+      agent('hello there', { segmentId: 'a1', isFinal: true, startedAt: 200 }),
+    );
+    t = reconcileTranscript(t, user('bye', { segmentId: 'u2', isFinal: true, startedAt: 300 }));
+    expect(t).toHaveLength(3);
+    expect(t.map((m) => m.text)).toEqual(['hi', 'hello there', 'bye']);
+    expect(t.map((m) => m.source)).toEqual(['user', 'agent', 'user']);
+  });
+
+  it('(n) multi-final turn does not reshuffle even when a later segment carries a later startedAt', () => {
+    // The turn bubble stays anchored at the first segment's startedAt, so a
+    // backchannel/agent bubble ordered by its own startedAt lands correctly.
+    let t: readonly ConversationMessage[] = [];
+    t = reconcileTranscript(
+      t,
+      user('part one', { segmentId: 'u1', isFinal: true, startedAt: 100 }),
+    );
+    t = reconcileTranscript(t, agent('mm-hmm', { segmentId: 'a1', isFinal: true, startedAt: 150 }));
+    // A late second FINAL for the user's FIRST turn — but the agent already
+    // spoke, so by the source-change rule this opens a new user turn.
+    t = reconcileTranscript(
+      t,
+      user('part two', { segmentId: 'u2', isFinal: true, startedAt: 200 }),
+    );
+    expect(t.map((m) => m.text)).toEqual(['part one', 'mm-hmm', 'part two']);
   });
 });
 
