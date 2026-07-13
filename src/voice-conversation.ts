@@ -63,6 +63,7 @@ export class VoiceConversation {
       ...(options.audioConstraints && {
         audioConstraints: options.audioConstraints,
       }),
+      ...(options.micEnabled !== undefined && { micEnabled: options.micEnabled }),
       callbacks: {
         ...(options.onConnect && { onConnect: options.onConnect }),
         ...(options.onDisconnect && { onDisconnect: options.onDisconnect }),

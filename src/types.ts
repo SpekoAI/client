@@ -83,6 +83,14 @@ export interface ConversationCommonOptions extends ConversationCallbacks {
   readonly inputDeviceId?: string;
   readonly outputDeviceId?: string;
   readonly audioConstraints?: AudioConstraints;
+  /**
+   * Publish the local microphone into the session (default true). Set false
+   * for a text-only conversation: the room connects and the agent's audio
+   * plays, but no microphone is requested or published — no permission
+   * prompt, no MICROPHONE_FAILED. Typed turns via `sendChatMessage` still
+   * work, so this is the fallback when a visitor has no mic or denied it.
+   */
+  readonly micEnabled?: boolean;
 }
 
 export interface TransportConversationOptions extends ConversationCommonOptions {

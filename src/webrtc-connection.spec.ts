@@ -14,7 +14,11 @@ const handlers = new Map<string, Handler>();
 
 vi.mock('livekit-client', () => {
   class FakeRoom {
-    localParticipant = { identity: 'local-user' };
+    localParticipant = {
+      identity: 'local-user',
+      publishTrack: vi.fn(async () => ({})),
+      setMicrophoneEnabled: vi.fn(async () => {}),
+    };
     name = 'room_test';
     canPlaybackAudio = true;
     startAudio = vi.fn(async () => {});
@@ -22,7 +26,7 @@ vi.mock('livekit-client', () => {
       handlers.set(event, cb);
       return this;
     }
-    async connect(): Promise<void> {}
+    connect = vi.fn(async (): Promise<void> => {});
     async disconnect(): Promise<void> {}
   }
   return {
@@ -43,6 +47,7 @@ vi.mock('livekit-client', () => {
   };
 });
 
+import { createLocalAudioTrack } from 'livekit-client';
 import { WebRTCConnection } from './webrtc-connection.js';
 
 function setup() {
@@ -193,5 +198,89 @@ describe('WebRTCConnection autoplay / audio playback recovery', () => {
     const { connection, room } = setup();
     await connection.startAudioPlayback();
     expect(room.startAudio).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('WebRTCConnection connect() microphone handling', () => {
+  beforeEach(() => {
+    handlers.clear();
+    vi.mocked(createLocalAudioTrack).mockReset();
+  });
+
+  function fakeRoomOf(connection: WebRTCConnection) {
+    return connection.roomInstance as unknown as {
+      connect: ReturnType<typeof vi.fn>;
+      localParticipant: { publishTrack: ReturnType<typeof vi.fn> };
+    };
+  }
+
+  it('text-only session (micEnabled: false) never touches the microphone', async () => {
+    const connection = new WebRTCConnection({
+      conversationToken: 'token',
+      livekitUrl: 'wss://example.test',
+      micEnabled: false,
+      callbacks: {},
+    });
+    const room = fakeRoomOf(connection);
+
+    await expect(connection.connect()).resolves.toBe('room_test');
+    expect(createLocalAudioTrack).not.toHaveBeenCalled();
+    expect(room.localParticipant.publishTrack).not.toHaveBeenCalled();
+    expect(connection.getStatus()).toBe('connected');
+  });
+
+  it('mic acquisition failure throws MICROPHONE_FAILED before the room is ever joined', async () => {
+    vi.mocked(createLocalAudioTrack).mockRejectedValueOnce(new Error('NotAllowedError'));
+    const connection = new WebRTCConnection({
+      conversationToken: 'token',
+      livekitUrl: 'wss://example.test',
+      callbacks: {},
+    });
+    const room = fakeRoomOf(connection);
+
+    await expect(connection.connect()).rejects.toMatchObject({ code: 'MICROPHONE_FAILED' });
+    // The credentials stay unused, so a caller can retry the SAME session
+    // text-only (micEnabled: false) without landing in a dead room.
+    expect(room.connect).not.toHaveBeenCalled();
+    expect(connection.getStatus()).toBe('disconnected');
+  });
+
+  it('acquires and publishes the mic when enabled (default)', async () => {
+    const track = { stop: vi.fn(), mute: vi.fn(), unmute: vi.fn() };
+    vi.mocked(createLocalAudioTrack).mockResolvedValueOnce(
+      track as unknown as Awaited<ReturnType<typeof createLocalAudioTrack>>,
+    );
+    const connection = new WebRTCConnection({
+      conversationToken: 'token',
+      livekitUrl: 'wss://example.test',
+      callbacks: {},
+    });
+    const room = fakeRoomOf(connection);
+
+    await expect(connection.connect()).resolves.toBe('room_test');
+    expect(createLocalAudioTrack).toHaveBeenCalledTimes(1);
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(track, {
+      source: 'microphone',
+      name: 'microphone',
+    });
+  });
+
+  it('setMicMuted() is a safe no-op on a text-only session', async () => {
+    const connection = new WebRTCConnection({
+      conversationToken: 'token',
+      livekitUrl: 'wss://example.test',
+      micEnabled: false,
+      callbacks: {},
+    });
+    const room = fakeRoomOf(connection) as unknown as {
+      localParticipant: { setMicrophoneEnabled: ReturnType<typeof vi.fn> };
+    };
+    await connection.connect();
+
+    // Must not fall through to setMicrophoneEnabled — that would fire a
+    // permission prompt from a non-gesture context.
+    await connection.setMicMuted(true);
+    await connection.setMicMuted(false);
+    expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
   });
 });

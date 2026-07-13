@@ -41,6 +41,8 @@ export interface WebRTCConnectionInit {
   readonly inputDeviceId?: string;
   readonly outputDeviceId?: string;
   readonly audioConstraints?: AudioConstraints;
+  /** Publish the local microphone (default true). False = text-only session. */
+  readonly micEnabled?: boolean;
   readonly callbacks: ConversationCallbacks;
 }
 
@@ -74,38 +76,55 @@ export class WebRTCConnection {
   }
 
   async connect(): Promise<string> {
+    // Acquire the microphone BEFORE joining the room. A permission denial
+    // used to surface after the join, which burned the session: the agent
+    // worker sees its caller drop and may close the room, so any retry with
+    // the same credentials lands in a dead session. Failing before any join
+    // keeps the token fresh for a fallback attempt (e.g. micEnabled: false).
+    if (this.init.micEnabled !== false) {
+      try {
+        // Always route through createLocalAudioTrack so audioConstraints are
+        // applied — setMicrophoneEnabled(true) would silently ignore them
+        // when no explicit inputDeviceId is passed.
+        this.localTrack = await createLocalAudioTrack({
+          ...(this.init.inputDeviceId && { deviceId: this.init.inputDeviceId }),
+          echoCancellation: this.init.audioConstraints?.echoCancellation ?? true,
+          noiseSuppression: this.init.audioConstraints?.noiseSuppression ?? true,
+          autoGainControl: this.init.audioConstraints?.autoGainControl ?? true,
+        });
+      } catch (err) {
+        this.setStatus('disconnected');
+        throw new SpekoClientError('Failed to acquire microphone', 'MICROPHONE_FAILED', err);
+      }
+    }
+
     try {
       await this.room.connect(this.init.livekitUrl, this.init.conversationToken, {
         autoSubscribe: true,
       });
     } catch (err) {
+      this.localTrack?.stop();
+      this.localTrack = undefined;
       this.setStatus('disconnected');
       throw new SpekoClientError('Failed to connect to media transport', 'CONNECTION_FAILED', err);
     }
 
-    try {
-      // Always route through createLocalAudioTrack so audioConstraints are
-      // applied — setMicrophoneEnabled(true) would silently ignore them
-      // when no explicit inputDeviceId is passed.
-      this.localTrack = await createLocalAudioTrack({
-        ...(this.init.inputDeviceId && { deviceId: this.init.inputDeviceId }),
-        echoCancellation: this.init.audioConstraints?.echoCancellation ?? true,
-        noiseSuppression: this.init.audioConstraints?.noiseSuppression ?? true,
-        autoGainControl: this.init.audioConstraints?.autoGainControl ?? true,
-      });
-      await this.room.localParticipant.publishTrack(this.localTrack, {
-        source: Track.Source.Microphone,
-        name: 'microphone',
-      });
-    } catch (err) {
-      // Mic failure after the room is connected — tear down the room so
-      // we don't leave it open consuming media transport resources until
-      // the token expires.
-      this.localTrack?.stop();
-      this.localTrack = undefined;
-      await this.room.disconnect().catch(() => undefined);
-      this.setStatus('disconnected');
-      throw new SpekoClientError('Failed to acquire microphone', 'MICROPHONE_FAILED', err);
+    if (this.localTrack) {
+      try {
+        await this.room.localParticipant.publishTrack(this.localTrack, {
+          source: Track.Source.Microphone,
+          name: 'microphone',
+        });
+      } catch (err) {
+        // Publish failure after the room is connected — tear down the room
+        // so we don't leave it open consuming media transport resources
+        // until the token expires.
+        this.localTrack?.stop();
+        this.localTrack = undefined;
+        await this.room.disconnect().catch(() => undefined);
+        this.setStatus('disconnected');
+        throw new SpekoClientError('Failed to acquire microphone', 'MICROPHONE_FAILED', err);
+      }
     }
 
     this.setStatus('connected');
@@ -158,6 +177,9 @@ export class WebRTCConnection {
       else await this.localTrack.unmute();
       return;
     }
+    // Text-only session: there is no microphone to mute, and the fallback
+    // below would fire a permission prompt from a non-gesture context.
+    if (this.init.micEnabled === false) return;
     await this.room.localParticipant.setMicrophoneEnabled(!muted);
   }
 
