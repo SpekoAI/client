@@ -199,6 +199,16 @@ describe('WebRTCConnection autoplay / audio playback recovery', () => {
     await connection.startAudioPlayback();
     expect(room.startAudio).toHaveBeenCalledTimes(1);
   });
+
+  it('types a runtime media-device error as MICROPHONE_FAILED (mid-call mic loss)', () => {
+    const { onError, fire } = setup();
+    fire('mediaDevicesError', new Error('Permission revoked'));
+    expect(onError).toHaveBeenCalledTimes(1);
+    const err = onError.mock.calls[0]?.[0] as { code?: string; message?: string };
+    // Consumers rely on the code to keep the call alive in text mode instead
+    // of tearing the session down (the room + agent audio are unaffected).
+    expect(err.code).toBe('MICROPHONE_FAILED');
+  });
 });
 
 describe('WebRTCConnection connect() microphone handling', () => {

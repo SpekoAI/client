@@ -228,7 +228,14 @@ export class WebRTCConnection {
     );
     this.room.on(RoomEvent.Disconnected, (reason) => this.handleDisconnected(reason));
     this.room.on(RoomEvent.MediaDevicesError, (err) => {
-      this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+      // A runtime device failure (mic permission revoked mid-call, device
+      // unplugged or claimed by another app). Typed as MICROPHONE_FAILED so
+      // consumers can tell "our input died" apart from a fatal session error —
+      // the room and the agent's audio are unaffected, so a consumer can keep
+      // the call alive in a text-input mode instead of tearing it down.
+      this.callbacks.onError?.(
+        new SpekoClientError('Microphone device error', 'MICROPHONE_FAILED', err),
+      );
     });
     // Autoplay policy: browsers (and embedded webviews) block audio that isn't
     // tied to a fresh user gesture. When that happens the agent is "speaking"
