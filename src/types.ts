@@ -124,7 +124,7 @@ export interface LegacyConversationOptions extends ConversationCommonOptions {
 
 export type ConversationOptions = TransportConversationOptions | LegacyConversationOptions;
 
-export interface RealtimeConversationOptions extends ConversationCallbacks {
+export interface LegacyRealtimeConversationOptions extends ConversationCallbacks {
   readonly sessionId: string;
   readonly wsUrl: string;
   readonly wsToken: string;
@@ -134,6 +134,55 @@ export interface RealtimeConversationOptions extends ConversationCallbacks {
   readonly inputDeviceId?: string;
   readonly audioConstraints?: AudioConstraints;
 }
+
+export interface ProviderDirectRealtimeConversationOptions extends ConversationCallbacks {
+  readonly transport: 'provider_direct';
+  readonly sessionId: string;
+  readonly attemptId: string;
+  readonly provider: 'openai' | 'xai' | 'google';
+  readonly model: string;
+  readonly adapter: 'openai.realtime.v1' | 'xai.realtime.v1' | 'google.live.v1';
+  readonly providerTransport: 'websocket' | 'webrtc';
+  readonly endpoint: string;
+  readonly sidebandUrl?: string;
+  readonly credential: {
+    readonly kind: 'bearer';
+    readonly value: string;
+    readonly expiresAt: string;
+  };
+  readonly telemetry: {
+    readonly endpoint: string;
+    readonly token: string;
+    readonly flushIntervalMs: number;
+  };
+  readonly reservation: {
+    readonly id: string;
+    readonly authorizedDurationSeconds: number;
+    readonly leaseExpiresAt: string;
+    readonly billing: {
+      readonly mode: 'direct_entitlement';
+      readonly state: 'estimated';
+      readonly maximumAmountMicros: string;
+      readonly currency: string;
+      readonly renewalUrl?: string;
+      readonly renewableUntil?: string;
+    };
+  };
+  readonly session?: {
+    readonly voice?: string;
+    readonly instructions?: string;
+    readonly temperature?: number;
+  };
+  readonly expiresAt?: string;
+  readonly inputSampleRate?: 16000 | 24000;
+  readonly outputSampleRate?: 24000;
+  readonly inputDeviceId?: string;
+  readonly audioConstraints?: AudioConstraints;
+}
+
+export type RealtimeConversationOptions =
+  | LegacyRealtimeConversationOptions
+  | ProviderDirectRealtimeConversationOptions;
 
 /**
  * `VoiceConversation.create` accepts short-lived session credentials minted by

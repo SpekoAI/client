@@ -41,6 +41,81 @@ class FakeWebSocket {
   }
 }
 
+type Listener = (event: unknown) => void;
+
+class FakeRTCDataChannel {
+  readonly sent: string[] = [];
+  readyState: RTCDataChannelState = 'open';
+  private readonly listeners = new Map<string, Listener[]>();
+
+  addEventListener(type: string, listener: Listener): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  send(value: string): void {
+    this.sent.push(value);
+  }
+
+  close(): void {
+    this.readyState = 'closed';
+  }
+
+  emit(type: string, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+class FakeRTCPeerConnection {
+  static instances: FakeRTCPeerConnection[] = [];
+  readonly channel = new FakeRTCDataChannel();
+  connectionState: RTCPeerConnectionState = 'new';
+  localDescription: RTCSessionDescriptionInit | null = null;
+  remoteDescription: RTCSessionDescriptionInit | null = null;
+  private readonly listeners = new Map<string, Listener[]>();
+
+  constructor() {
+    FakeRTCPeerConnection.instances.push(this);
+  }
+
+  addTrack(): void {}
+
+  createDataChannel(): RTCDataChannel {
+    return this.channel as unknown as RTCDataChannel;
+  }
+
+  async createOffer(): Promise<RTCSessionDescriptionInit> {
+    return { type: 'offer', sdp: 'offer-sdp' };
+  }
+
+  async setLocalDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    this.localDescription = description;
+  }
+
+  async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    this.remoteDescription = description;
+  }
+
+  addEventListener(type: string, listener: Listener): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  close(): void {
+    this.connectionState = 'closed';
+  }
+}
+
+class FakeMediaStream {
+  constructor(private readonly tracks: MediaStreamTrack[] = []) {}
+
+  getAudioTracks(): MediaStreamTrack[] {
+    return this.tracks;
+  }
+}
+
 interface FakeAudioContextInstance {
   sampleRate: number;
   currentTime: number;
@@ -60,8 +135,15 @@ class FakeAudioContext {
   processor: FakeAudioContextInstance['processor'] = { onaudioprocess: null };
   sources: FakeAudioContextInstance['sources'] = [];
 
-  constructor() {
+  constructor(options?: AudioContextOptions) {
+    this.sampleRate = options?.sampleRate ?? 48_000;
     audioContexts.push(this);
+  }
+
+  createMediaStreamDestination() {
+    return {
+      stream: new FakeMediaStream([{ kind: 'audio' } as MediaStreamTrack]),
+    };
   }
 
   createGain() {
@@ -111,6 +193,7 @@ class FakeAudioContext {
       connect: vi.fn(),
       start: vi.fn(),
       stop: vi.fn(),
+      addEventListener: vi.fn(),
       onended: null as (() => void) | null,
     };
     this.sources.push(source);
@@ -120,15 +203,22 @@ class FakeAudioContext {
   async close() {
     return undefined;
   }
+
+  async resume() {
+    return undefined;
+  }
 }
 
 const originalWebSocket = globalThis.WebSocket;
 const originalWindow = globalThis.window;
 const originalNavigator = globalThis.navigator;
 const originalUrl = globalThis.URL;
+const originalRTCPeerConnection = globalThis.RTCPeerConnection;
+const originalMediaStream = globalThis.MediaStream;
 
 function installBrowserFakes() {
   FakeWebSocket.instances.length = 0;
+  FakeRTCPeerConnection.instances.length = 0;
   audioContexts.length = 0;
   Object.defineProperty(globalThis, 'WebSocket', {
     configurable: true,
@@ -149,6 +239,14 @@ function installBrowserFakes() {
       },
     },
   });
+  Object.defineProperty(globalThis, 'RTCPeerConnection', {
+    configurable: true,
+    value: FakeRTCPeerConnection,
+  });
+  Object.defineProperty(globalThis, 'MediaStream', {
+    configurable: true,
+    value: FakeMediaStream,
+  });
   Object.defineProperty(globalThis, 'URL', {
     configurable: true,
     value: {
@@ -157,6 +255,20 @@ function installBrowserFakes() {
       revokeObjectURL: vi.fn(),
     },
   });
+}
+
+function directReservation() {
+  return {
+    id: 'reservation-1',
+    authorizedDurationSeconds: 1800,
+    leaseExpiresAt: '2100-01-01T00:05:00Z',
+    billing: {
+      mode: 'direct_entitlement' as const,
+      state: 'estimated' as const,
+      maximumAmountMicros: '180000',
+      currency: 'USD',
+    },
+  };
 }
 
 function restoreBrowserGlobals() {
@@ -176,6 +288,14 @@ function restoreBrowserGlobals() {
     configurable: true,
     value: originalUrl,
   });
+  Object.defineProperty(globalThis, 'RTCPeerConnection', {
+    configurable: true,
+    value: originalRTCPeerConnection,
+  });
+  Object.defineProperty(globalThis, 'MediaStream', {
+    configurable: true,
+    value: originalMediaStream,
+  });
 }
 
 function socket(): FakeWebSocket {
@@ -190,7 +310,300 @@ describe('RealtimeVoiceConversation', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     restoreBrowserGlobals();
+    vi.unstubAllGlobals();
+  });
+
+  it('connects browser audio directly to OpenAI with only the delegated credential', async () => {
+    Object.defineProperty(globalThis, 'URL', { configurable: true, value: originalUrl });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response('answer-sdp', {
+          status: 201,
+          headers: { Location: '/v1/realtime/calls/call_12345678' },
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ bound: true }, { status: 202 }))
+      .mockResolvedValue(Response.json({ accepted: 2, deduplicated: 0 }, { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = RealtimeVoiceConversation.create({
+      transport: 'provider_direct',
+      sessionId: 'sess_provider_direct',
+      attemptId: 'att_provider_direct',
+      provider: 'openai',
+      model: 'gpt-realtime',
+      adapter: 'openai.realtime.v1',
+      providerTransport: 'webrtc',
+      endpoint: 'https://api.openai.com/v1/realtime/calls',
+      sidebandUrl: 'https://control.speko.test/v1/sessions/sess_provider_direct/sidebands/openai',
+      credential: { kind: 'bearer', value: 'ek-short-lived', expiresAt: '2100-01-01T00:05:00Z' },
+      telemetry: {
+        endpoint: 'https://control.speko.test/v1/runtime-events',
+        token: 'telemetry-token',
+        flushIntervalMs: 5000,
+      },
+      reservation: directReservation(),
+      session: { voice: 'marin', instructions: 'Answer briefly.' },
+      inputSampleRate: 24000,
+      outputSampleRate: 24000,
+    });
+
+    await vi.waitFor(() => expect(FakeRTCPeerConnection.instances).toHaveLength(1));
+    const peer = FakeRTCPeerConnection.instances[0];
+    if (!peer) throw new Error('expected WebRTC peer');
+    peer.channel.emit('open', {});
+    expect(JSON.parse(String(peer.channel.sent[0]))).toMatchObject({
+      type: 'session.update',
+      session: { instructions: 'Answer briefly.', audio: { output: { voice: 'marin' } } },
+    });
+    peer.channel.emit('message', { data: JSON.stringify({ type: 'session.updated' }) });
+    const conversation = await pending;
+
+    peer.channel.emit('message', {
+      data: JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.completed',
+        transcript: 'hello',
+      }),
+    });
+    await conversation.endSession();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.openai.com/v1/realtime/calls');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      'https://control.speko.test/v1/sessions/sess_provider_direct/sidebands/openai',
+    );
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://control.speko.test/v1/runtime-events');
+  });
+
+  it('configures xAI caller transcription and reconciles cumulative updates', async () => {
+    Object.defineProperty(globalThis, 'URL', { configurable: true, value: originalUrl });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ accepted: 2, deduplicated: 0 }, { status: 202 })),
+    );
+    const pending = RealtimeVoiceConversation.create({
+      transport: 'provider_direct',
+      sessionId: 'sess_xai_direct',
+      attemptId: 'att_xai_direct',
+      provider: 'xai',
+      model: 'grok-voice-latest',
+      adapter: 'xai.realtime.v1',
+      providerTransport: 'websocket',
+      endpoint: 'wss://api.x.ai/v1/realtime',
+      credential: { kind: 'bearer', value: 'xai-short-lived', expiresAt: '2100-01-01T00:05:00Z' },
+      telemetry: {
+        endpoint: 'https://control.speko.test/v1/runtime-events',
+        token: 'telemetry-token',
+        flushIntervalMs: 5000,
+      },
+      reservation: directReservation(),
+      session: { voice: 'eve', instructions: 'Answer briefly.' },
+      inputSampleRate: 24000,
+      outputSampleRate: 24000,
+    });
+
+    expect(socket().url).toBe('wss://api.x.ai/v1/realtime?model=grok-voice-latest');
+    expect(socket().protocols).toEqual(['xai-client-secret.xai-short-lived']);
+    socket().emit('open', {});
+    expect(JSON.parse(String(socket().sent[0]))).toMatchObject({
+      type: 'session.update',
+      session: {
+        audio: { input: { transcription: { model: 'grok-transcribe' } } },
+      },
+    });
+    socket().message(JSON.stringify({ type: 'session.updated' }));
+    const conversation = await pending;
+
+    for (const transcript of ['hello', 'hello world']) {
+      socket().message(
+        JSON.stringify({
+          type: 'conversation.item.input_audio_transcription.updated',
+          item_id: 'item-1',
+          transcript,
+        }),
+      );
+    }
+    socket().message(
+      JSON.stringify({
+        type: 'conversation.item.input_audio_transcription.completed',
+        item_id: 'item-1',
+        transcript: 'hello world',
+      }),
+    );
+
+    expect(conversation.transcript).toEqual([
+      { source: 'user', text: 'hello world', isFinal: true, segmentId: 'item-1' },
+    ]);
+    await conversation.endSession();
+  });
+
+  it('uses Google constrained Live directly with 16 kHz PCM input', async () => {
+    Object.defineProperty(globalThis, 'URL', { configurable: true, value: originalUrl });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ accepted: 2, deduplicated: 0 }, { status: 202 })),
+    );
+    const onMessage = vi.fn();
+    const pending = RealtimeVoiceConversation.create({
+      transport: 'provider_direct',
+      sessionId: 'sess_google_direct',
+      attemptId: 'att_google_direct',
+      provider: 'google',
+      model: 'gemini-3.1-flash-live-preview',
+      adapter: 'google.live.v1',
+      providerTransport: 'websocket',
+      endpoint:
+        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained',
+      credential: {
+        kind: 'bearer',
+        value: 'auth_tokens/google-one-use',
+        expiresAt: '2100-01-01T00:05:00Z',
+      },
+      telemetry: {
+        endpoint: 'https://control.speko.test/v1/runtime-events',
+        token: 'telemetry-token',
+        flushIntervalMs: 5000,
+      },
+      reservation: directReservation(),
+      session: { voice: 'Puck', instructions: 'Answer briefly.', temperature: 0.7 },
+      inputSampleRate: 16000,
+      outputSampleRate: 24000,
+      onMessage,
+    });
+
+    expect(socket().url).toBe(
+      'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=auth_tokens%2Fgoogle-one-use',
+    );
+    expect(socket().protocols).toBeUndefined();
+    socket().emit('open', {});
+    expect(JSON.parse(String(socket().sent[0]))).toMatchObject({
+      setup: {
+        model: 'models/gemini-3.1-flash-live-preview',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          temperature: 0.7,
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
+        },
+        systemInstruction: { parts: [{ text: 'Answer briefly.' }] },
+      },
+    });
+    socket().message(JSON.stringify({ setupComplete: {} }));
+    const conversation = await pending;
+    socket().message(
+      JSON.stringify({
+        serverContent: {
+          inputTranscription: { text: 'hello Gemini' },
+          modelTurn: {
+            parts: [{ inlineData: { data: 'AQIDBA==', mimeType: 'audio/pcm;rate=24000' } }],
+          },
+        },
+      }),
+    );
+    expect(onMessage).toHaveBeenCalledWith({
+      source: 'user',
+      text: 'hello Gemini',
+      isFinal: true,
+    });
+
+    const ctx = audioContexts[0];
+    if (!ctx?.processor.onaudioprocess) throw new Error('audio processor was not installed');
+    ctx.processor.onaudioprocess({
+      inputBuffer: { getChannelData: () => new Float32Array(960).fill(0.25) },
+    });
+    expect(JSON.parse(String(socket().sent[1]))).toMatchObject({
+      realtimeInput: { audio: { mimeType: 'audio/pcm;rate=16000' } },
+    });
+    await conversation.endSession();
+  });
+
+  it('prepaids and rotates a Google Live entitlement with session resumption', async () => {
+    vi.useFakeTimers();
+    const now = new Date('2026-08-28T12:00:00Z');
+    vi.setSystemTime(now);
+    Object.defineProperty(globalThis, 'URL', { configurable: true, value: originalUrl });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          entitlement_id: 'entitlement-2',
+          sequence: 2,
+          lease_expires_at: '2026-08-28T12:00:20Z',
+          authorized_units: 10,
+          maximum_amount_micros: 1_000,
+          currency: 'USD',
+          credential: {
+            kind: 'bearer',
+            value: 'auth_tokens/google-renewed',
+            expires_at: '2026-08-28T12:00:20Z',
+          },
+        }),
+      )
+      .mockResolvedValue(Response.json({ accepted: 2 }, { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = RealtimeVoiceConversation.create({
+      transport: 'provider_direct',
+      sessionId: 'sess_google_renew',
+      attemptId: 'att_google_renew',
+      provider: 'google',
+      model: 'gemini-3.1-flash-live-preview',
+      adapter: 'google.live.v1',
+      providerTransport: 'websocket',
+      endpoint:
+        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained',
+      credential: {
+        kind: 'bearer',
+        value: 'auth_tokens/google-first',
+        expiresAt: '2026-08-28T12:00:10Z',
+      },
+      telemetry: {
+        endpoint: 'https://control.speko.test/v1/runtime-events',
+        token: 'telemetry-token',
+        flushIntervalMs: 60_000,
+      },
+      reservation: {
+        id: 'reservation-1',
+        authorizedDurationSeconds: 10,
+        leaseExpiresAt: '2026-08-28T12:00:10Z',
+        billing: {
+          mode: 'direct_entitlement',
+          state: 'estimated',
+          maximumAmountMicros: '1000',
+          currency: 'USD',
+          renewalUrl: 'https://control.speko.test/v1/sessions/sess_google_renew/entitlements/renew',
+          renewableUntil: '2026-08-28T12:05:00Z',
+        },
+      },
+      inputSampleRate: 16000,
+      outputSampleRate: 24000,
+    });
+    const first = socket();
+    first.emit('open', {});
+    first.message(
+      JSON.stringify({
+        setupComplete: {},
+        sessionResumptionUpdate: { newHandle: 'resume-handle' },
+      }),
+    );
+    const conversation = await pending;
+
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://control.speko.test/v1/sessions/sess_google_renew/entitlements/renew',
+    );
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const renewed = FakeWebSocket.instances[1];
+    if (!renewed) throw new Error('expected renewed Google socket');
+    expect(renewed.url).toContain('access_token=auth_tokens%2Fgoogle-renewed');
+    renewed.emit('open', {});
+    expect(JSON.parse(String(renewed.sent[0]))).toMatchObject({
+      setup: { sessionResumption: { handle: 'resume-handle' } },
+    });
+    await conversation.endSession();
   });
 
   it('waits for ready before starting capture and sends PCM frames at the negotiated input rate', async () => {
