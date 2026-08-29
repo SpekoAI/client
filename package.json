@@ -1,0 +1,64 @@
+{
+  "name": "@spekoai/client",
+  "version": "0.0.13",
+  "description": "Browser SDK for SpekoAI — real-time voice conversations",
+  "license": "MIT",
+  "author": "Speko",
+  "homepage": "https://github.com/SpekoAI/client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SpekoAI/client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SpekoAI/client/issues"
+  },
+  "keywords": [
+    "speko",
+    "spekoai",
+    "voice-ai",
+    "voice-agent",
+    "livekit",
+    "webrtc",
+    "browser",
+    "client",
+    "realtime",
+    "stt",
+    "tts",
+    "speech-to-text",
+    "text-to-speech",
+    "failover",
+    "fallback",
+    "multilingual"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@spekoai/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "dependencies": {
+    "livekit-client": "^2.18.6",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}
