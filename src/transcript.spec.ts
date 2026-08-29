@@ -384,3 +384,40 @@ describe('reconcileTranscript — legacy no-segmentId coalesce path', () => {
     expect(t.find((m) => m.source === 'user')?.text).toBe('partial grown');
   });
 });
+
+describe('reconcileTranscript — a recycled segment id never rewrites a closed turn', () => {
+  /** Replay of staging session 003dbd07: a long opening turn, the agent's reply,
+   * then a turn LiveKit committed as two finals — the first reusing the opening
+   * turn's segment id, because its per-track counter had restarted. */
+  const OPENING = "Uh, hello? Yeah, you're speaking to me. Oh, let me hand out to someone.";
+
+  function replay(): ConversationMessage[] {
+    const stream: ConversationMessage[] = [
+      { source: 'agent', text: 'Hi, this is Alex.', isFinal: true, segmentId: 'A1', startedAt: 1 },
+      { source: 'user', text: 'Uh, hello? Yeah,', isFinal: false, segmentId: 'U1', startedAt: 2 },
+      { source: 'user', text: OPENING, isFinal: true, segmentId: 'U1', startedAt: 2 },
+      { source: 'agent', text: 'Great, thanks.', isFinal: true, segmentId: 'A2', startedAt: 3 },
+      { source: 'user', text: 'Uh,', isFinal: true, segmentId: 'U1', startedAt: 4 },
+      { source: 'user', text: 'Yeah.', isFinal: true, segmentId: 'U2', startedAt: 5 },
+    ];
+    let acc: ConversationMessage[] = [];
+    for (const m of stream) acc = reconcileTranscript(acc, m);
+    return acc;
+  }
+
+  it('keeps the opening sentence intact', () => {
+    const users = replay().filter((m) => m.source === 'user');
+    expect(users[0]?.text).toBe(OPENING);
+  });
+
+  it('coalesces the reused-id turn into ONE later bubble', () => {
+    const users = replay().filter((m) => m.source === 'user');
+    expect(users).toHaveLength(2);
+    expect(users[1]?.text).toBe('Uh, Yeah.');
+  });
+
+  it('never duplicates the opening sentence', () => {
+    const copies = replay().filter((m) => m.text === OPENING).length;
+    expect(copies).toBe(1);
+  });
+});

@@ -25,10 +25,13 @@ import type { ConversationMessage } from './types.js';
  * id (a stable render key across the turn's growth).
  *
  * ### Handling one incoming segment (segmentId defined)
- * 1. **Re-delivery** — the id already names a segment of an existing same-source
- *    turn. Segment updates are CUMULATIVE (interims re-publish growing text; the
- *    final may be re-delivered), so REPLACE that segment's contribution. This
- *    never appends, so re-deliveries can't duplicate.
+ * 1. **Re-delivery** — the id already names a segment of this source's OPEN run
+ *    (the bubbles since the other speaker last spoke). Segment updates are
+ *    CUMULATIVE (interims re-publish growing text; the final may be
+ *    re-delivered), so REPLACE that segment's contribution. This never appends,
+ *    so re-deliveries can't duplicate. The scope matters: LiveKit's per-track
+ *    segment counters restart, so an id recurs across utterances — matching it
+ *    against a turn the other speaker has already closed rewrote history.
  * 2. **Interim→final supersession** — a committed FINAL can carry a *different*
  *    id than the interim it supersedes (LiveKit user STT). If the id is unknown
  *    and `incoming.isFinal`, fold it into the most-recent same-source turn whose
@@ -100,11 +103,21 @@ function reconcileSegment(
 ): ConversationMessage[] {
   const id = incoming.segmentId;
 
-  // 1. Re-delivery of a segment we already track (same source, same id) →
-  //    replace that segment's contribution (cumulative interim or re-sent final).
-  for (let i = 0; i < prev.length; i++) {
+  // 1. Re-delivery of a segment we already track → replace that segment's
+  //    contribution (cumulative interim or re-sent final).
+  //
+  //    Scoped to the TRAILING RUN of this source — the bubbles since the other
+  //    speaker last spoke — because a segment id identifies a segment only
+  //    within the turn still being built. LiveKit's per-track counters restart,
+  //    so an id from an earlier utterance comes round again; scanning all of
+  //    history then rewrote a CLOSED turn with a later turn's words. Replaying
+  //    a real staging call (session 003dbd07) with the id reused, the caller's
+  //    opening sentence was replaced by a later "Uh," and lost outright.
+  for (let i = prev.length - 1; i >= 0; i--) {
     const bubble = prev[i];
-    if (bubble === undefined || bubble.source !== incoming.source) continue;
+    if (bubble === undefined) continue;
+    // The other speaker closed this source's run: ids before it are history.
+    if (bubble.source !== incoming.source) break;
     const state = turnStateOf(bubble);
     const segIdx = state.segments.findIndex((s) => s.id === id);
     if (segIdx !== -1) {
