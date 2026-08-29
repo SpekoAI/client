@@ -154,7 +154,15 @@ export class WebRTCConnection {
         'NOT_CONNECTED',
       );
     }
-    const bytes = encodePacket(packet);
+    // Copied into a fresh, definitely-not-shared ArrayBuffer. `TextEncoder`
+    // returns `Uint8Array<ArrayBufferLike>`, and newer livekit-client types
+    // `publishData` as `Uint8Array<ArrayBuffer>` — TS 5.7+ separated those, so
+    // handing the encoder's view straight over is an error (TS2345,
+    // SharedArrayBuffer is not assignable to ArrayBuffer). It does not fail in
+    // this repo, whose lockfile pins an older livekit-client; it failed only in
+    // the mirror's publish build, which installs the newest match for ^2.18.6
+    // — which is how it went unnoticed until it blocked a release.
+    const bytes = new Uint8Array(encodePacket(packet));
     void this.room.localParticipant.publishData(bytes, { reliable: true });
   }
 
