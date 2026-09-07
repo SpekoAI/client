@@ -49,6 +49,27 @@ export interface TtsOverrides {
   readonly speed?: number;
 }
 
+/**
+ * INERT — nothing reads these today. Kept because whether a browser may
+ * override agent config at all is an open product question, not because the
+ * path works. Two independent breaks, either one sufficient:
+ *
+ *  1. Topic mismatch. `WebRTCConnection.publish` calls `publishData` with no
+ *     topic, so the packet arrives with `topic == None`. worker-py's only
+ *     data-channel handler (`agent.py` `_on_control_data`) routes through
+ *     `parse_control_message`, which returns `None` for any topic that is not
+ *     `speko.control` — asserted by `tests/test_bridge_etiquette.py`
+ *     `test_ignores_other_topics`, which pins the `None`-topic case.
+ *  2. Type mismatch. Even on `speko.control` the handler dispatches only
+ *     `transfer_completed` and `credits_exhausted`. There is no `overrides`
+ *     branch to reach.
+ *
+ * Per-session agent config that DOES take effect is set server-side on
+ * `POST /v1/sessions` (`variables`, compiled into the prompt at mint), which
+ * has the additional property of not being forgeable by page JavaScript.
+ * Making these overrides live means picking a topic, publishing on it from
+ * `publish()`, and adding a dispatch branch in worker-py — all three.
+ */
 export interface ConversationOverrides {
   readonly agent?: AgentOverrides;
   readonly tts?: TtsOverrides;

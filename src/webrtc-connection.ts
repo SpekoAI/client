@@ -30,8 +30,13 @@ import type {
   MessageSource,
 } from './types.js';
 
-// LiveKit Agents' RoomIO listens for typed user input on this topic (textEnabled
-// defaults to true), treating each message as a user turn.
+// LiveKit Agents' RoomIO listens for typed user input on this topic, treating
+// each message as a user turn. This is the ONE outbound text path that reaches
+// the agent — the data-channel packets in `publish()` do not (see below).
+// It works by way of the framework's `text_enabled` default rather than
+// anything on our side: worker-py builds its RoomInputOptions with only
+// `audio_input` and `participant_kinds` set, so the default is load-bearing
+// and would break silently if a future worker passed `text_enabled=False`.
 const CHAT_TOPIC = 'lk.chat';
 
 export interface WebRTCConnectionInit {
@@ -130,6 +135,11 @@ export class WebRTCConnection {
     this.setStatus('connected');
     const conversationId = this.room.name || '';
 
+    // Published, but nothing consumes it — see `ConversationOverrides` in
+    // types.ts. The packet goes out with no topic, and worker-py's only
+    // data-channel handler discards anything not on `speko.control`. Left in
+    // place deliberately: the wire format is documented and the product
+    // question (may a browser override agent config at all?) is still open.
     if (this.init.overrides) {
       this.publish({ type: 'overrides', overrides: this.init.overrides });
     }
@@ -163,6 +173,13 @@ export class WebRTCConnection {
     // the mirror's publish build, which installs the newest match for ^2.18.6
     // — which is how it went unnoticed until it blocked a release.
     const bytes = new Uint8Array(encodePacket(packet));
+    // No `topic` — so every packet published here (`overrides`, `user_message`,
+    // `contextual_update`) reaches worker-py as `topic == None` and is dropped
+    // by `parse_control_message`, which only accepts `speko.control`. That
+    // makes this whole outbound path inert against the shipping worker; the
+    // reasoning and the fix-list live on `ConversationOverrides` in types.ts.
+    // `sendChatText` below is the outbound text path that does land, because
+    // it uses `sendText` on `lk.chat` rather than a data packet.
     void this.room.localParticipant.publishData(bytes, { reliable: true });
   }
 
