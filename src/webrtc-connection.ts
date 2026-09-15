@@ -11,6 +11,7 @@ import {
   Track,
   type TranscriptionSegment,
 } from 'livekit-client';
+import type { ConversationConnection } from './connection.js';
 import {
   decodePacket,
   encodePacket,
@@ -51,7 +52,7 @@ export interface WebRTCConnectionInit {
   readonly callbacks: ConversationCallbacks;
 }
 
-export class WebRTCConnection {
+export class WebRTCConnection implements ConversationConnection {
   private readonly room: Room;
   private readonly callbacks: ConversationCallbacks;
   private readonly outputDeviceId?: string;

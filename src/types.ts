@@ -115,6 +115,8 @@ export interface ConversationCommonOptions extends ConversationCallbacks {
 }
 
 export interface TransportConversationOptions extends ConversationCommonOptions {
+  /** Media runtime returned by POST /v1/sessions. Omitted means LiveKit for compatibility. */
+  readonly transport?: 'livekit' | 'daily';
   readonly transportToken: string;
   /**
    * Media transport URL returned from `POST /v1/sessions`. Pass the value
@@ -129,6 +131,7 @@ export interface TransportConversationOptions extends ConversationCommonOptions 
 }
 
 export interface LegacyConversationOptions extends ConversationCommonOptions {
+  readonly transport?: 'livekit';
   /** @deprecated Use `transportToken`. */
   readonly conversationToken: string;
   /**

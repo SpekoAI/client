@@ -55,6 +55,8 @@
     "provenance": true
   },
   "dependencies": {
+    "@pipecat-ai/client-js": "^1.13.1",
+    "@pipecat-ai/daily-transport": "^1.6.8",
     "livekit-client": "^2.18.6",
     "tslib": "^2.3.0"
   },

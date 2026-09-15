@@ -1,3 +1,5 @@
+import type { ConversationConnection } from './connection.js';
+import { DailyConnection } from './daily-connection.js';
 import { reconcileTranscript } from './transcript.js';
 import type { ConversationMessage, CreateOptions } from './types.js';
 import { WebRTCConnection } from './webrtc-connection.js';
@@ -9,11 +11,11 @@ interface TranscriptCell {
 }
 
 export class VoiceConversation {
-  private readonly connection: WebRTCConnection;
+  private readonly connection: ConversationConnection;
   private conversationId = '';
   private readonly _cell: TranscriptCell;
 
-  private constructor(connection: WebRTCConnection, cell: TranscriptCell) {
+  private constructor(connection: ConversationConnection, cell: TranscriptCell) {
     this.connection = connection;
     this._cell = cell;
   }
@@ -50,33 +52,33 @@ export class VoiceConversation {
       consumerOnTranscript?.(cell.list);
     };
 
-    const connection = new WebRTCConnection({
-      conversationToken,
-      livekitUrl,
-      ...(options.overrides && { overrides: options.overrides }),
-      ...(options.inputDeviceId !== undefined && {
-        inputDeviceId: options.inputDeviceId,
+    const callbacks = {
+      ...(options.onConnect && { onConnect: options.onConnect }),
+      ...(options.onDisconnect && { onDisconnect: options.onDisconnect }),
+      onMessage: wrappedOnMessage,
+      ...(options.onStatusChange && { onStatusChange: options.onStatusChange }),
+      ...(options.onModeChange && { onModeChange: options.onModeChange }),
+      ...(options.onError && { onError: options.onError }),
+      ...(options.onAudioPlaybackBlocked && {
+        onAudioPlaybackBlocked: options.onAudioPlaybackBlocked,
       }),
-      ...(options.outputDeviceId !== undefined && {
-        outputDeviceId: options.outputDeviceId,
-      }),
-      ...(options.audioConstraints && {
-        audioConstraints: options.audioConstraints,
-      }),
+    };
+    const common = {
+      ...(options.inputDeviceId !== undefined && { inputDeviceId: options.inputDeviceId }),
+      ...(options.outputDeviceId !== undefined && { outputDeviceId: options.outputDeviceId }),
+      ...(options.audioConstraints && { audioConstraints: options.audioConstraints }),
       ...(options.micEnabled !== undefined && { micEnabled: options.micEnabled }),
-      callbacks: {
-        ...(options.onConnect && { onConnect: options.onConnect }),
-        ...(options.onDisconnect && { onDisconnect: options.onDisconnect }),
-        // Always register our wrapped handler; it calls through to the consumer's onMessage.
-        onMessage: wrappedOnMessage,
-        ...(options.onStatusChange && { onStatusChange: options.onStatusChange }),
-        ...(options.onModeChange && { onModeChange: options.onModeChange }),
-        ...(options.onError && { onError: options.onError }),
-        ...(options.onAudioPlaybackBlocked && {
-          onAudioPlaybackBlocked: options.onAudioPlaybackBlocked,
-        }),
-      },
-    });
+      callbacks,
+    };
+    const connection: ConversationConnection =
+      credentials.transport === 'daily'
+        ? new DailyConnection({ token: conversationToken, url: livekitUrl, ...common })
+        : new WebRTCConnection({
+            conversationToken,
+            livekitUrl,
+            ...(options.overrides && { overrides: options.overrides }),
+            ...common,
+          });
 
     const conv = new VoiceConversation(connection, cell);
     conv.conversationId = await connection.connect();
