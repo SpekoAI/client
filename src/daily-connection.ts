@@ -12,8 +12,14 @@ export interface DailyConnectionInit {
   readonly outputDeviceId?: string;
   readonly audioConstraints?: AudioConstraints;
   readonly micEnabled?: boolean;
+  /** Internal override for deterministic tests; production waits 30 seconds. */
+  readonly connectTimeoutMs?: number;
   readonly callbacks: ConversationCallbacks;
 }
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
+
+class DailyConnectTimeoutError extends Error {}
 
 export class DailyConnection implements ConversationConnection {
   private readonly transport: DailyTransport;
@@ -78,9 +84,18 @@ export class DailyConnection implements ConversationConnection {
       await this.client.initDevices();
       if (this.init.inputDeviceId) this.client.updateMic(this.init.inputDeviceId);
       if (this.init.outputDeviceId) this.client.updateSpeaker(this.init.outputDeviceId);
-      await this.client.connect({ url: this.init.url, token: this.init.token });
+      await this.connectWithTimeout();
     } catch (error) {
       this.setStatus('disconnected');
+      if (error instanceof DailyConnectTimeoutError) {
+        await this.client.disconnect().catch(() => undefined);
+        this.detachAllAudio();
+        throw new SpekoClientError(
+          'Timed out waiting for the Daily agent to become ready',
+          'CONNECTION_TIMEOUT',
+          error,
+        );
+      }
       throw new SpekoClientError(
         'Failed to connect to Daily transport',
         'CONNECTION_FAILED',
@@ -91,6 +106,24 @@ export class DailyConnection implements ConversationConnection {
     const conversationId = this.transport.getSessionInfo().id ?? '';
     this.init.callbacks.onConnect?.({ conversationId });
     return conversationId;
+  }
+
+  private async connectWithTimeout(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new DailyConnectTimeoutError()),
+        this.init.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
+      );
+    });
+    try {
+      await Promise.race([
+        this.client.connect({ url: this.init.url, token: this.init.token }),
+        timeout,
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async disconnect(): Promise<void> {

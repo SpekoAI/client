@@ -1,5 +1,6 @@
 export type SpekoClientErrorCode =
   | 'CONNECTION_FAILED'
+  | 'CONNECTION_TIMEOUT'
   | 'DISCONNECTED'
   | 'MICROPHONE_FAILED'
   /**
