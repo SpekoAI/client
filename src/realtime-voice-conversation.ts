@@ -958,6 +958,9 @@ function providerSessionUpdate(
     if (options.session?.temperature !== undefined) {
       generationConfig['temperature'] = options.session.temperature;
     }
+    if (options.session?.thinkingLevel) {
+      generationConfig['thinkingConfig'] = { thinkingLevel: options.session.thinkingLevel };
+    }
     return {
       setup: {
         model: `models/${options.model.replace(/^models\//, '')}`,

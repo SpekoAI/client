@@ -521,6 +521,89 @@ describe('RealtimeVoiceConversation', () => {
     await conversation.endSession();
   });
 
+  it('sends the Gemini thinking level the server resolved', async () => {
+    Object.defineProperty(globalThis, 'URL', { configurable: true, value: originalUrl });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(Response.json({ accepted: 2, deduplicated: 0 }, { status: 202 })),
+    );
+    const onMessage = vi.fn();
+    const pending = RealtimeVoiceConversation.create({
+      transport: 'provider_direct',
+      sessionId: 'sess_google_thinking',
+      attemptId: 'att_google_thinking',
+      provider: 'google',
+      model: 'gemini-3.8-live-extended-thinking',
+      adapter: 'google.live.v1',
+      providerTransport: 'websocket',
+      endpoint:
+        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained',
+      credential: {
+        kind: 'bearer',
+        value: 'auth_tokens/google-one-use',
+        expiresAt: '2100-01-01T00:05:00Z',
+      },
+      telemetry: {
+        endpoint: 'https://control.speko.test/v1/runtime-events',
+        token: 'telemetry-token',
+        flushIntervalMs: 5000,
+      },
+      reservation: directReservation(),
+      session: { voice: 'Puck', instructions: 'Answer briefly.', thinkingLevel: 'high' },
+      inputSampleRate: 16000,
+      outputSampleRate: 24000,
+      onMessage,
+    });
+
+    expect(socket().url).toBe(
+      'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=auth_tokens%2Fgoogle-one-use',
+    );
+    expect(socket().protocols).toBeUndefined();
+    socket().emit('open', {});
+    expect(JSON.parse(String(socket().sent[0]))).toMatchObject({
+      setup: {
+        model: 'models/gemini-3.8-live-extended-thinking',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          // Without this the extended-thinking model closes the socket 1007
+          // "Thinking level must be specified for this model".
+          thinkingConfig: { thinkingLevel: 'high' },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
+        },
+        systemInstruction: { parts: [{ text: 'Answer briefly.' }] },
+      },
+    });
+    socket().message(JSON.stringify({ setupComplete: {} }));
+    const conversation = await pending;
+    socket().message(
+      JSON.stringify({
+        serverContent: {
+          inputTranscription: { text: 'hello Gemini' },
+          modelTurn: {
+            parts: [{ inlineData: { data: 'AQIDBA==', mimeType: 'audio/pcm;rate=24000' } }],
+          },
+        },
+      }),
+    );
+    expect(onMessage).toHaveBeenCalledWith({
+      source: 'user',
+      text: 'hello Gemini',
+      isFinal: true,
+    });
+
+    const ctx = audioContexts[0];
+    if (!ctx?.processor.onaudioprocess) throw new Error('audio processor was not installed');
+    ctx.processor.onaudioprocess({
+      inputBuffer: { getChannelData: () => new Float32Array(960).fill(0.25) },
+    });
+    expect(JSON.parse(String(socket().sent[1]))).toMatchObject({
+      realtimeInput: { audio: { mimeType: 'audio/pcm;rate=16000' } },
+    });
+    await conversation.endSession();
+  });
+
   it('prepaids and rotates a Google Live entitlement with session resumption', async () => {
     vi.useFakeTimers();
     const now = new Date('2026-08-28T12:00:00Z');

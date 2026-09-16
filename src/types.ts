@@ -196,6 +196,13 @@ export interface ProviderDirectRealtimeConversationOptions extends ConversationC
     readonly voice?: string;
     readonly instructions?: string;
     readonly temperature?: number;
+    /**
+     * Gemini Live only: `generationConfig.thinkingConfig.thinkingLevel`. The
+     * server sends it only for a model that REQUIRES one (and never for a
+     * model that refuses one) — both mistakes close the socket 1007 before a
+     * word is spoken — so this is forwarded as given, not decided here.
+     */
+    readonly thinkingLevel?: 'low' | 'medium' | 'high';
   };
   readonly expiresAt?: string;
   readonly inputSampleRate?: 16000 | 24000;
