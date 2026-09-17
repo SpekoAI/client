@@ -25,6 +25,8 @@ export class DailyConnection implements ConversationConnection {
   private readonly transport: DailyTransport;
   private readonly client: PipecatClient;
   private readonly audioElements = new Map<string, HTMLAudioElement>();
+  private readonly userSegments = new Map<string, { id: string; startedAt?: number }>();
+  private nextUserSegment = 0;
   private status: ConversationStatus = 'connecting';
   private disconnected = false;
   private volume = 1;
@@ -179,15 +181,28 @@ export class DailyConnection implements ConversationConnection {
   }
 
   private userTranscript(data: TranscriptData): void {
-    if (!data.text) return;
+    if (!data.text) {
+      if (data.final) this.userSegments.delete(data.user_id);
+      return;
+    }
+    // RTVI timestamps identify individual updates, not STT segments. Keep a
+    // stable identity while the recognizer revises one cumulative partial.
+    let segment = this.userSegments.get(data.user_id);
+    if (!segment) {
+      const startedAt = Date.parse(data.timestamp);
+      segment = {
+        id: `user:${data.user_id}:${this.nextUserSegment++}`,
+        ...(Number.isFinite(startedAt) ? { startedAt } : {}),
+      };
+      this.userSegments.set(data.user_id, segment);
+    }
+    if (data.final) this.userSegments.delete(data.user_id);
     this.init.callbacks.onMessage?.({
       source: 'user',
       text: data.text,
       isFinal: data.final,
-      segmentId: `${data.user_id}:${data.timestamp}`,
-      ...(Number.isFinite(Date.parse(data.timestamp))
-        ? { startedAt: Date.parse(data.timestamp) }
-        : {}),
+      segmentId: segment.id,
+      ...(segment.startedAt !== undefined ? { startedAt: segment.startedAt } : {}),
     });
   }
 
@@ -204,6 +219,7 @@ export class DailyConnection implements ConversationConnection {
   private handleDisconnected(reason: 'user' | 'agent' | 'unknown'): void {
     if (this.disconnected) return;
     this.disconnected = true;
+    this.userSegments.clear();
     this.detachAllAudio();
     this.setStatus('disconnected');
     this.init.callbacks.onDisconnect?.({ reason });
