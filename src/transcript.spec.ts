@@ -421,3 +421,58 @@ describe('reconcileTranscript — a recycled segment id never rewrites a closed 
     expect(copies).toBe(1);
   });
 });
+
+describe('reconcileTranscript — a line the other speaker talks over keeps ONE bubble', () => {
+  /** Replay of the HappyFleet demo call (2026-09-22): the agent starts speaking
+   * while the caller's sentence is still arriving. The agent's bubble sorts
+   * after the caller's, and every later caller update used to open a new
+   * bubble, so the page showed the sentence as a stack of its own prefixes. */
+  const WORDS = 'You know we explained what happened and then took the necessary measures'.split(
+    ' ',
+  );
+
+  function replay(): ConversationMessage[] {
+    const stream: ConversationMessage[] = [
+      agent('Can you tell me about a time?', { isFinal: true, segmentId: 'A1', startedAt: 1 }),
+    ];
+    for (let n = 1; n <= 6; n++) {
+      stream.push(user(WORDS.slice(0, n).join(' '), { segmentId: 'U1', startedAt: 2 }));
+    }
+    stream.push(agent("I'm", { segmentId: 'A2', startedAt: 5 }));
+    for (let n = 7; n <= WORDS.length; n++) {
+      stream.push(user(WORDS.slice(0, n).join(' '), { segmentId: 'U1', startedAt: 2 }));
+    }
+    stream.push(user(WORDS.join(' '), { isFinal: true, segmentId: 'U1', startedAt: 2 }));
+    const reply = "I'm sorry, I didn't quite catch that.".split(' ');
+    for (let n = 2; n <= reply.length; n++) {
+      stream.push(agent(reply.slice(0, n).join(' '), { segmentId: 'A2', startedAt: 5 }));
+    }
+    let acc: ConversationMessage[] = [];
+    for (const m of stream) acc = reconcileTranscript(acc, m);
+    return acc;
+  }
+
+  it('renders the overlapped caller sentence as ONE final bubble', () => {
+    const users = replay().filter((m) => m.source === 'user');
+    expect(users).toHaveLength(1);
+    expect(users[0]?.text).toBe(WORDS.join(' '));
+    expect(users[0]?.isFinal).toBe(true);
+  });
+
+  it('keeps the agent reply in ONE bubble after it', () => {
+    const out = replay();
+    expect(out.map((m) => m.source)).toEqual(['agent', 'user', 'agent']);
+    expect(out[2]?.text).toBe("I'm sorry, I didn't quite catch that.");
+  });
+
+  it('still never matches a FINAL segment past the run (recycled "Yes." survives)', () => {
+    const stream: ConversationMessage[] = [
+      user('Yes.', { isFinal: true, segmentId: 'U1', startedAt: 1 }),
+      agent('Great.', { isFinal: true, segmentId: 'A1', startedAt: 2 }),
+      user('Yes.', { isFinal: true, segmentId: 'U1', startedAt: 3 }),
+    ];
+    let acc: ConversationMessage[] = [];
+    for (const m of stream) acc = reconcileTranscript(acc, m);
+    expect(acc.map((m) => m.text)).toEqual(['Yes.', 'Great.', 'Yes.']);
+  });
+});

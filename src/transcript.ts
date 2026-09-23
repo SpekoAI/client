@@ -113,14 +113,30 @@ function reconcileSegment(
   //    history then rewrote a CLOSED turn with a later turn's words. Replaying
   //    a real staging call (session 003dbd07) with the id reused, the caller's
   //    opening sentence was replaced by a later "Uh," and lost outright.
+  //
+  //    One exception reaches past the run: the most recent same-source bubble
+  //    before it, when the id names a segment of it that is still OPEN (not
+  //    final). Bubbles sort by `startedAt`, so when the other speaker starts
+  //    talking OVER a line, their bubble sorts after it and closes the run
+  //    while the line is still arriving. Stopping there opened a new bubble
+  //    for every cumulative update, and one sentence rendered as a stack of
+  //    its own prefixes (HappyFleet demo call, 2026-09-22). An open segment
+  //    can only be continued by its own updates, so matching it cannot rewrite
+  //    a closed turn: a recycled id always follows a FINAL segment. A final is
+  //    never matched out there, not even a verbatim one: "Yes." then "Yes."
+  //    under a recycled id would erase the second answer.
+  let runClosed = false;
   for (let i = prev.length - 1; i >= 0; i--) {
     const bubble = prev[i];
     if (bubble === undefined) continue;
-    // The other speaker closed this source's run: ids before it are history.
-    if (bubble.source !== incoming.source) break;
+    if (bubble.source !== incoming.source) {
+      runClosed = true;
+      continue;
+    }
     const state = turnStateOf(bubble);
     const segIdx = state.segments.findIndex((s) => s.id === id);
-    if (segIdx !== -1) {
+    const seg = segIdx === -1 ? undefined : state.segments[segIdx];
+    if (seg !== undefined && (!runClosed || !seg.isFinal)) {
       return replaceBubble(prev, i, incoming.source, {
         segments: withSegmentAt(state.segments, segIdx, {
           id,
@@ -130,6 +146,9 @@ function reconcileSegment(
         startedAt: state.startedAt,
       });
     }
+    // Past the run, only the newest same-source bubble is eligible: ids before
+    // it are history.
+    if (runClosed) break;
   }
 
   // 2. A final under an unknown id supersedes the most-recent same-source turn
