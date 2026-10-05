@@ -61,8 +61,9 @@ export interface TtsOverrides {
  *     `speko.control` — asserted by `tests/test_bridge_etiquette.py`
  *     `test_ignores_other_topics`, which pins the `None`-topic case.
  *  2. Type mismatch. Even on `speko.control` the handler dispatches only
- *     `transfer_completed` and `credits_exhausted`. There is no `overrides`
- *     branch to reach.
+ *     `transfer_completed`, `transfer_failed` and `credits_exhausted`, and
+ *     only from the server (`server_control_message` drops any packet a
+ *     participant sent). There is no `overrides` branch to reach.
  *
  * Per-session agent config that DOES take effect is set server-side on
  * `POST /v1/sessions` (`variables`, compiled into the prompt at mint), which
