@@ -993,6 +993,9 @@ function providerSessionUpdate(
         ...(options.session?.instructions !== undefined
           ? { instructions: options.session.instructions }
           : {}),
+        ...(options.session?.reasoningEffort
+          ? { reasoning: { effort: options.session.reasoningEffort } }
+          : {}),
       },
     };
   }

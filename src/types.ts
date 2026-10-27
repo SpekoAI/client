@@ -204,6 +204,11 @@ export interface ProviderDirectRealtimeConversationOptions extends ConversationC
      * word is spoken — so this is forwarded as given, not decided here.
      */
     readonly thinkingLevel?: 'low' | 'medium' | 'high';
+    /**
+     * xAI Grok Voice 3.0 only: `session.reasoning.effort` (`none` | `high`).
+     * The server sends it only for that model; forwarded as given.
+     */
+    readonly reasoningEffort?: 'none' | 'high';
   };
   readonly expiresAt?: string;
   readonly inputSampleRate?: 16000 | 24000;
