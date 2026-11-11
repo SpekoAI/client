@@ -1,3 +1,10 @@
+export type {
+  CallListenerEndDetails,
+  CallListenerOptions,
+  CallListenerStatus,
+  CallSpeakerRole,
+} from './call-listener.js';
+export { CallListener } from './call-listener.js';
 export { Conversation } from './conversation.js';
 export type { SpekoClientErrorCode } from './errors.js';
 export { SpekoClientError } from './errors.js';

@@ -211,6 +211,44 @@ describe('WebRTCConnection autoplay / audio playback recovery', () => {
   });
 });
 
+describe('WebRTCConnection remote audio elements', () => {
+  beforeEach(() => {
+    handlers.clear();
+    document.body.replaceChildren();
+  });
+
+  function audioTrack() {
+    const el = document.createElement('audio');
+    el.play = vi.fn(async () => {});
+    return { el, track: { kind: 'audio', attach: () => el, detach: () => [el] } };
+  }
+
+  it('plays a subscribed audio track at the set volume and removes it on unsubscribe', () => {
+    const { connection, fire } = setup();
+    connection.setVolume(0.3);
+    const { el, track } = audioTrack();
+
+    fire('trackSubscribed', track, {}, { identity: 'agent-AJ_x' });
+
+    expect(Array.from(document.body.querySelectorAll('audio'))).toEqual([el]);
+    expect(el.play).toHaveBeenCalledTimes(1);
+    expect(el.volume).toBe(0.3);
+
+    fire('trackUnsubscribed', track, {});
+
+    expect(document.body.querySelector('audio')).toBeNull();
+  });
+
+  it('removes every audio element when the room disconnects', () => {
+    const { fire } = setup();
+    fire('trackSubscribed', audioTrack().track, {}, { identity: 'agent-AJ_x' });
+
+    fire('disconnected', 1);
+
+    expect(document.body.querySelector('audio')).toBeNull();
+  });
+});
+
 describe('WebRTCConnection connect() microphone handling', () => {
   beforeEach(() => {
     handlers.clear();

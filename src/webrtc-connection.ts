@@ -20,6 +20,7 @@ import {
   packetToMessage,
 } from './data-channel.js';
 import { SpekoClientError } from './errors.js';
+import { RemoteAudioPlayback } from './remote-audio.js';
 import type {
   AudioConstraints,
   ConversationCallbacks,
@@ -55,17 +56,27 @@ export interface WebRTCConnectionInit {
 export class WebRTCConnection implements ConversationConnection {
   private readonly room: Room;
   private readonly callbacks: ConversationCallbacks;
-  private readonly outputDeviceId?: string;
-  private readonly audioElements = new Set<HTMLAudioElement>();
+  private readonly playback: RemoteAudioPlayback;
   private status: ConversationStatus = 'connecting';
   private mode: ConversationMode = 'listening';
   private localTrack?: LocalAudioTrack;
-  private volume = 1;
 
   constructor(private readonly init: WebRTCConnectionInit) {
     this.callbacks = init.callbacks;
-    this.outputDeviceId = init.outputDeviceId;
     this.room = new Room();
+    this.playback = new RemoteAudioPlayback({
+      outputDeviceId: init.outputDeviceId,
+      // On block, surface it so the consumer can recover via
+      // `startAudioPlayback()` from a user gesture.
+      onPlaybackRejected: () => {
+        if (!this.room.canPlaybackAudio) {
+          this.callbacks.onAudioPlaybackBlocked?.();
+        }
+      },
+      onOutputDeviceError: (err) => {
+        this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+      },
+    });
     this.bindRoomEvents();
   }
 
@@ -210,10 +221,7 @@ export class WebRTCConnection implements ConversationConnection {
   }
 
   setVolume(volume: number): void {
-    this.volume = Math.max(0, Math.min(1, volume));
-    for (const el of this.audioElements) {
-      el.volume = this.volume;
-    }
+    this.playback.setVolume(volume);
   }
 
   /** True when the browser is currently allowing the agent's audio to play. */
@@ -233,9 +241,7 @@ export class WebRTCConnection implements ConversationConnection {
     } catch (err) {
       this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
     }
-    for (const el of this.audioElements) {
-      void el.play().catch(() => undefined);
-    }
+    this.playback.resume();
   }
 
   private bindRoomEvents(): void {
@@ -277,42 +283,12 @@ export class WebRTCConnection implements ConversationConnection {
 
   private handleTrackSubscribed(track: RemoteTrack, _participant: Participant): void {
     if (track.kind !== Track.Kind.Audio) return;
-    const audio = track as RemoteAudioTrack;
-    const el = audio.attach();
-    el.autoplay = true;
-    el.volume = this.volume;
-    el.style.display = 'none';
-    if (typeof document !== 'undefined') {
-      document.body.appendChild(el);
-    }
-    if (this.outputDeviceId && 'setSinkId' in el) {
-      const withSink = el as HTMLAudioElement & {
-        setSinkId: (id: string) => Promise<void>;
-      };
-      void withSink.setSinkId(this.outputDeviceId).catch((err: unknown) => {
-        this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
-      });
-    }
-    this.audioElements.add(el);
-
-    // Don't rely on the `autoplay` attribute alone — explicitly play and catch
-    // the autoplay-block rejection. Without this, a blocked agent track fails
-    // SILENTLY (no audio, no error). On block, surface it so the consumer can
-    // recover via `startAudioPlayback()` from a user gesture.
-    void el.play().catch(() => {
-      if (!this.room.canPlaybackAudio) {
-        this.callbacks.onAudioPlaybackBlocked?.();
-      }
-    });
+    this.playback.attach(track as RemoteAudioTrack);
   }
 
   private handleTrackUnsubscribed(track: RemoteTrack, _pub: RemoteTrackPublication): void {
     if (track.kind !== Track.Kind.Audio) return;
-    const elements = (track as RemoteAudioTrack).detach();
-    for (const el of elements) {
-      this.audioElements.delete(el);
-      el.remove();
-    }
+    this.playback.detach(track as RemoteAudioTrack);
   }
 
   private handleDataReceived(payload: Uint8Array): void {
@@ -376,8 +352,7 @@ export class WebRTCConnection implements ConversationConnection {
     // stops after the call ends.
     this.localTrack?.stop();
     this.localTrack = undefined;
-    for (const el of this.audioElements) el.remove();
-    this.audioElements.clear();
+    this.playback.clear();
     this.callbacks.onDisconnect?.(mapDisconnect(reason));
   }
 
