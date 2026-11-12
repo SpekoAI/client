@@ -1,6 +1,6 @@
 {
   "name": "@spekoai/client",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "description": "Browser SDK for SpekoAI — real-time voice conversations",
   "license": "MIT",
   "author": "Speko",
@@ -47,6 +47,18 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./transcript": {
+      "@spekoai/source": "./src/transcript.ts",
+      "types": "./dist/transcript.d.ts",
+      "import": "./dist/transcript.js",
+      "default": "./dist/transcript.js"
+    },
+    "./data-channel": {
+      "@spekoai/source": "./src/data-channel.ts",
+      "types": "./dist/data-channel.d.ts",
+      "import": "./dist/data-channel.js",
+      "default": "./dist/data-channel.js"
     }
   },
   "publishConfig": {
