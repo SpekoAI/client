@@ -127,6 +127,35 @@ any media published into the call. Messages your backend sends to the agent
 reach the agent alone. `CallListener` plays audio only. Give the credentials only to
 people who are allowed to hear the whole call.
 
+## Take a live call over
+
+`CallTakeover` lets a person talk to the caller from the browser. While they
+are on the call the agent stays silent; `handBack()` gives the call back to
+the agent. Your backend mints the credentials with
+`speko.calls.webJoin(callId)`.
+
+```ts
+import { CallTakeover } from '@spekoai/client';
+
+const takeover = await CallTakeover.connect({
+  // Fetched once the microphone is granted; `url` and `token` work too.
+  credentials: () => fetch(`/api/calls/${callId}/take-over`, { method: 'POST' }).then((r) => r.json()),
+  onEnded: ({ reason }) => showIdle(reason === 'call_ended' ? 'Call ended' : 'Handed back'),
+  onError: (error) => showError(error.code), // DISCONNECTED or MICROPHONE_FAILED
+  onSpeakersChange: (speakers) => highlight(speakers), // 'you', 'agent', 'caller'
+});
+
+await takeover.setMuted(true); // the call stays yours while muted
+await takeover.handBack();
+```
+
+`connect()` asks for the microphone before it joins and rejects with
+`MICROPHONE_FAILED` if the browser gives none; nothing joined the call then.
+It resolves once Speko confirms the take-over, and rejects with
+`TAKE_OVER_FAILED` if that does not happen within 20 seconds (the agent keeps
+the call).
+Disconnect a `CallListener` on the same call first, or you hear it twice.
+
 ## License
 
 MIT

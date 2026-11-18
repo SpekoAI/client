@@ -8,6 +8,7 @@ import {
   RoomEvent,
   Track,
 } from 'livekit-client';
+import { CALL_OVER_REASONS, reasonName } from './call-room.js';
 import { SpekoClientError } from './errors.js';
 import { RemoteAudioPlayback } from './remote-audio.js';
 
@@ -80,14 +81,6 @@ type Connecting = {
 type State = Connecting | { readonly status: 'listening' } | Terminal;
 
 type JoinResult = { readonly ok: true } | { readonly ok: false; readonly cause: unknown };
-
-// The server removes every listener when the call is over, so these reasons
-// are the "call ended" signal. Any other reason means the connection broke.
-const CALL_OVER_REASONS: ReadonlySet<DisconnectReason | undefined> = new Set([
-  DisconnectReason.PARTICIPANT_REMOVED,
-  DisconnectReason.ROOM_DELETED,
-  DisconnectReason.ROOM_CLOSED,
-]);
 
 const ROLE_BY_KIND: ReadonlyMap<ParticipantKind, CallSpeakerRole> = new Map([
   [ParticipantKind.AGENT, 'agent'],
@@ -299,10 +292,6 @@ export class CallListener {
 
 function isTerminal(state: State): state is Terminal {
   return state.status === 'ended' || state.status === 'failed';
-}
-
-function reasonName(reason: DisconnectReason | undefined): string | undefined {
-  return reason === undefined ? undefined : DisconnectReason[reason];
 }
 
 function rolesOf(speakers: readonly Participant[]): readonly CallSpeakerRole[] {

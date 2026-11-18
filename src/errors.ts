@@ -10,7 +10,9 @@ export type SpekoClientErrorCode =
    */
   | 'INVALID_MESSAGE'
   | 'NOT_CONNECTED'
-  | 'SESSION_REQUEST_FAILED';
+  | 'SESSION_REQUEST_FAILED'
+  /** `CallTakeover`: Speko did not confirm the take-over; the agent keeps the call. */
+  | 'TAKE_OVER_FAILED';
 
 export class SpekoClientError extends Error {
   readonly code: SpekoClientErrorCode;

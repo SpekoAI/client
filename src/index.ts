@@ -5,6 +5,15 @@ export type {
   CallSpeakerRole,
 } from './call-listener.js';
 export { CallListener } from './call-listener.js';
+export type {
+  CallTakeoverCommonOptions,
+  CallTakeoverCredentials,
+  CallTakeoverEndDetails,
+  CallTakeoverOptions,
+  CallTakeoverSpeaker,
+  CallTakeoverStatus,
+} from './call-takeover.js';
+export { CallTakeover } from './call-takeover.js';
 export { Conversation } from './conversation.js';
 export type { SpekoClientErrorCode } from './errors.js';
 export { SpekoClientError } from './errors.js';
