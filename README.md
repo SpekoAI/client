@@ -123,8 +123,8 @@ cannot route to the device, the listener stays silent and calls
 default device.
 
 The credentials give receive access to everything in the call, which includes
-any media published into the call and the messages that your backend sends
-into the call. `CallListener` plays audio only. Give the credentials only to
+any media published into the call. Messages your backend sends to the agent
+reach the agent alone. `CallListener` plays audio only. Give the credentials only to
 people who are allowed to hear the whole call.
 
 ## License
