@@ -1,10 +1,10 @@
 {
   "name": "@spekoai/client",
   "version": "0.0.17",
-  "description": "Browser SDK for SpekoAI — real-time voice conversations",
+  "description": "Official browser client for Speko: talk to AI voice agents in real time, listen to live calls, and take over a call from the browser.",
   "license": "MIT",
   "author": "Speko",
-  "homepage": "https://github.com/SpekoAI/client#readme",
+  "homepage": "https://speko.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SpekoAI/client.git"
@@ -17,7 +17,6 @@
     "spekoai",
     "voice-ai",
     "voice-agent",
-    "livekit",
     "webrtc",
     "browser",
     "client",
@@ -26,8 +25,6 @@
     "tts",
     "speech-to-text",
     "text-to-speech",
-    "failover",
-    "fallback",
     "multilingual"
   ],
   "type": "module",

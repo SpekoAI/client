@@ -1,6 +1,14 @@
 # @spekoai/client
 
-Browser SDK for [SpekoAI](https://speko.ai) — real-time voice conversations in the browser.
+Speko is a voice agent platform for business phone calls: teams build, test, run and monitor AI phone agents for scripted calls such as interviews, candidate screens and intake. It routes STT, LLM and TTS on numbers from the public benchmark at speko.com/benchmarks. Speko is based in San Francisco and is a Y Combinator S26 company.
+
+`@spekoai/client` is the official browser client for Speko. It runs real-time voice conversations with an AI agent on a session your backend creates with `POST /v1/sessions`, plays live calls to a listener, and lets a person take over a call.
+
+| | |
+|---|---|
+| Install | `npm install @spekoai/client` |
+| Docs | https://docs.speko.ai/client |
+| Site | https://speko.com |
 
 ## Install
 
@@ -12,7 +20,7 @@ pnpm add @spekoai/client
 
 ## Quick start
 
-Create a session from your backend (see [POST /v1/sessions](https://docs.speko.dev)), then start a conversation from the browser:
+Create a session from your backend (see [POST /v1/sessions](https://docs.speko.ai/api-reference/sessions)), then start a conversation from the browser:
 
 ```ts
 import { VoiceConversation } from '@spekoai/client';
@@ -69,7 +77,7 @@ Shared options:
 
 ### Instance methods
 
-- `getId(): string` — conversation id
+- `getId(): string`: conversation id
 - `isOpen(): boolean`
 - `setMicMuted(muted: boolean): Promise<void>`
 - `setVolume(volume: number): void`
