@@ -1,0 +1,75 @@
+{
+  "name": "@spekoai/client",
+  "version": "0.0.17",
+  "description": "Official browser client for Speko: talk to AI voice agents in real time, listen to live calls, and take over a call from the browser.",
+  "license": "MIT",
+  "author": "Speko",
+  "homepage": "https://speko.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SpekoAI/client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SpekoAI/client/issues"
+  },
+  "keywords": [
+    "speko",
+    "spekoai",
+    "voice-ai",
+    "voice-agent",
+    "webrtc",
+    "browser",
+    "client",
+    "realtime",
+    "stt",
+    "tts",
+    "speech-to-text",
+    "text-to-speech",
+    "multilingual"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "@spekoai/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./transcript": {
+      "@spekoai/source": "./src/transcript.ts",
+      "types": "./dist/transcript.d.ts",
+      "import": "./dist/transcript.js",
+      "default": "./dist/transcript.js"
+    },
+    "./data-channel": {
+      "@spekoai/source": "./src/data-channel.ts",
+      "types": "./dist/data-channel.d.ts",
+      "import": "./dist/data-channel.js",
+      "default": "./dist/data-channel.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "dependencies": {
+    "@pipecat-ai/client-js": "^1.13.1",
+    "@pipecat-ai/daily-transport": "^1.6.8",
+    "livekit-client": "^2.18.6",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}
